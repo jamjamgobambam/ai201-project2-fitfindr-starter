@@ -21,7 +21,7 @@ Usage (once implemented):
 import json
 import os
 from groq import Groq
-from tools import search_listings, suggest_outfit, create_fit_card
+from tools import search_listings, suggest_outfit, create_fit_card, _get_groq_client
 
 
 # ── session state ─────────────────────────────────────────────────────────────
@@ -49,12 +49,6 @@ def _new_session(query: str, wardrobe: dict) -> dict:
 
 
 # ── planning loop ─────────────────────────────────────────────────────────────
-
-def _get_groq_client():
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        raise ValueError("GROQ_API_KEY not set.")
-    return Groq(api_key=api_key)
 
 def _parse_query(query: str) -> dict:
     """Use LLM to extract search parameters from query."""
