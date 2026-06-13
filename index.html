@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitFindr — Find Your Fit</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{width:100%;height:100%;overflow:hidden;background:#080810;color:#f0ece0;font-family:'Georgia',serif}
+    body{cursor:none}
+
+    /* ─── CURSOR ─── */
+    .no-cursor{cursor:none!important}
+    .no-cursor *{cursor:none!important}
+    /* dot — snaps to mouse instantly */
+    #cur-dot{position:fixed;width:6px;height:6px;background:#f0ece0;border-radius:50%;pointer-events:none;z-index:9999;transform:translate(-50%,-50%);left:-50px;top:-50px;transition:width .18s,height .18s,background .2s,opacity .2s;mix-blend-mode:difference}
+    #cur-dot.hover{width:10px;height:10px;background:#e8a598}
+    #cur-dot.click{width:4px;height:4px;opacity:.6}
+    /* outer ring — lags behind, squashes on velocity */
+    #cur-ring{position:fixed;width:36px;height:36px;border-radius:50%;pointer-events:none;z-index:9997;transform:translate(-50%,-50%) rotate(0deg);left:-50px;top:-50px;border:1.5px solid rgba(240,236,224,.28)}
+    #cur-ring.hover{border-color:rgba(232,165,152,.7)}
+    /* inner accent ring — medium lag */
+    #cur-ring2{position:fixed;width:18px;height:18px;border-radius:50%;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);left:-50px;top:-50px;border:1px solid rgba(240,236,224,.14);transition:border-color .2s}
+    #cur-ring2.hover{border-color:rgba(232,165,152,.35)}
+    /* trail canvas — and all cursor layers must never eat clicks */
+    #cur-trail,#cur-dot,#cur-ring,#cur-ring2{pointer-events:none}
+
+    /* ─── LOADER ─── */
+    #loader{position:fixed;inset:0;background:#080810;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10000;transition:opacity 1.3s ease}
+    #loader h1{font-size:clamp(3rem,9vw,7.5rem);letter-spacing:.35em;font-weight:300;text-transform:uppercase;color:#f0ece0}
+    #loader .sub{font-family:'Courier New',monospace;font-size:.78rem;letter-spacing:.32em;color:rgba(240,236,224,.28);margin-top:.9rem}
+    .lbar{width:200px;height:1px;background:rgba(240,236,224,.08);margin-top:3.2rem;overflow:hidden}
+    .lbar-fill{height:100%;background:#f0ece0;width:0%;transition:width 3s cubic-bezier(.16,1,.3,1)}
+    #load-img-status{font-family:'Courier New',monospace;font-size:.6rem;letter-spacing:.22em;color:rgba(240,236,224,.18);margin-top:1.4rem}
+
+    /* ─── CANVAS ─── */
+    #cvs-wrap{position:fixed;inset:0;z-index:0}
+    #vig{position:fixed;inset:0;pointer-events:none;z-index:1;background:radial-gradient(ellipse at center,transparent 42%,rgba(8,8,16,.72) 100%)}
+
+    /* ─── NAV ─── */
+    nav{position:fixed;top:0;left:0;right:0;padding:1.4rem 2.2rem;display:flex;align-items:center;justify-content:space-between;z-index:200;background:linear-gradient(to bottom,rgba(8,8,16,.85) 0%,transparent 100%);backdrop-filter:blur(0px)}
+    .logo{font-size:1.2rem;letter-spacing:.32em;text-transform:uppercase;font-weight:300;cursor:none}
+    #count{font-family:'Courier New',monospace;font-size:.72rem;color:rgba(240,236,224,.32);letter-spacing:.15em}
+    .nav-actions{display:flex;gap:.6rem;align-items:center}
+    .nav-btn{background:rgba(240,236,224,.06);border:1px solid rgba(240,236,224,.1);color:rgba(240,236,224,.7);font-family:'Courier New',monospace;font-size:.68rem;letter-spacing:.15em;text-transform:uppercase;padding:.5rem .9rem;cursor:none;transition:all .25s;position:relative;display:flex;align-items:center;gap:.4rem}
+    .nav-btn:hover{background:rgba(240,236,224,.12);color:#f0ece0;border-color:rgba(240,236,224,.25)}
+    .nav-btn .icon{font-size:.9rem}
+    .badge{background:#e8a598;color:#080810;font-size:.55rem;font-weight:700;padding:.15rem .35rem;border-radius:20px;min-width:16px;text-align:center;display:none}
+    .badge.show{display:inline-block}
+
+    /* ─── FILTERS ─── */
+    #filters{position:fixed;left:2.2rem;top:50%;transform:translateY(-50%);z-index:200;display:flex;flex-direction:column;gap:.85rem}
+    .fbtn{background:none;border:none;color:rgba(240,236,224,.25);font-family:'Courier New',monospace;font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;cursor:none;padding:.3rem 0 .3rem .9rem;transition:color .3s,letter-spacing .3s;position:relative}
+    .fbtn::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:3px;border-radius:50%;background:currentColor;opacity:0;transition:opacity .3s}
+    .fbtn:hover,.fbtn.on{color:#f0ece0;letter-spacing:.22em}
+    .fbtn:hover::before,.fbtn.on::before{opacity:1}
+
+    /* ─── HOVER TAG ─── */
+    #htag{position:fixed;pointer-events:none;z-index:500;background:rgba(8,8,16,.94);border:1px solid rgba(240,236,224,.1);backdrop-filter:blur(18px);padding:.48rem .88rem;font-family:'Courier New',monospace;font-size:.7rem;color:#f0ece0;letter-spacing:.1em;white-space:nowrap;opacity:0;transition:opacity .18s;transform:translate(20px,-50%)}
+    #htag .hp{color:#e8a598;margin-left:.55rem}
+
+    /* ─── SEARCH ─── */
+    #srch-wrap{position:fixed;bottom:2.8rem;left:50%;transform:translateX(-50%);z-index:200;width:min(580px,88vw)}
+    #srch{width:100%;background:rgba(8,8,16,.8);border:1px solid rgba(240,236,224,.1);color:#f0ece0;padding:.88rem 1.4rem;font-family:'Courier New',monospace;font-size:.82rem;letter-spacing:.08em;outline:none;backdrop-filter:blur(22px);transition:border-color .3s;cursor:none}
+    #srch::placeholder{color:rgba(240,236,224,.18)}
+    #srch:focus{border-color:rgba(240,236,224,.3)}
+    #hint{position:fixed;bottom:6rem;left:50%;transform:translateX(-50%);font-family:'Courier New',monospace;font-size:.63rem;letter-spacing:.22em;color:rgba(240,236,224,.14);pointer-events:none;white-space:nowrap;transition:opacity .8s}
+
+    /* ═══════════════════════════════════════════════
+       OVERLAY PAGES — shared base
+    ═══════════════════════════════════════════════ */
+    .overlay-page{position:fixed;inset:0;z-index:1000;background:rgba(8,8,16,.98);backdrop-filter:blur(30px);transform:translateY(100%);transition:transform .6s cubic-bezier(.16,1,.3,1);overflow-y:auto;display:flex;flex-direction:column}
+    .overlay-page.open{transform:translateY(0)}
+    .ov-header{display:flex;align-items:center;justify-content:space-between;padding:1.6rem 2.4rem;border-bottom:1px solid rgba(240,236,224,.07);flex-shrink:0;position:sticky;top:0;background:rgba(8,8,16,.95);backdrop-filter:blur(20px);z-index:10}
+    .ov-title{font-size:1.1rem;letter-spacing:.25em;text-transform:uppercase;font-weight:300}
+    .ov-back{background:none;border:none;color:rgba(240,236,224,.45);font-family:'Courier New',monospace;font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;cursor:none;padding:.4rem .8rem;transition:color .3s;display:flex;align-items:center;gap:.5rem}
+    .ov-back:hover{color:#f0ece0}
+    .ov-back::before{content:'←';font-size:.9rem}
+
+    /* ═══════════════════════════════════════════════
+       PRODUCT MODAL — Amazon-style
+    ═══════════════════════════════════════════════ */
+    #product-modal{flex-direction:column}
+    #product-modal .pm-body{display:grid;grid-template-columns:1fr 1fr;flex:1;min-height:0;overflow:hidden}
+    @media(max-width:768px){#product-modal .pm-body{grid-template-columns:1fr;overflow-y:auto}}
+
+    /* Image column */
+    .pm-img-col{display:flex;flex-direction:column;background:#0c0c18;overflow:hidden}
+    .pm-img-main-wrap{flex:1;position:relative;overflow:hidden;cursor:zoom-in;min-height:300px}
+    .pm-img-main{width:100%;height:100%;object-fit:cover;display:block;transition:transform .5s ease,opacity .4s;opacity:0}
+    .pm-img-main.rdy{opacity:1}
+    .pm-img-main-wrap:hover .pm-img-main{transform:scale(1.08)}
+    .pm-img-main-wrap .zoom-hint{position:absolute;bottom:1rem;right:1rem;font-family:'Courier New',monospace;font-size:.6rem;letter-spacing:.15em;color:rgba(240,236,224,.35);background:rgba(8,8,16,.7);padding:.3rem .6rem;pointer-events:none;opacity:0;transition:opacity .3s}
+    .pm-img-main-wrap:hover .zoom-hint{opacity:1}
+    .pm-img-thumbs{display:flex;gap:.5rem;padding:.8rem 1rem;background:#0a0a14;flex-shrink:0;overflow-x:auto}
+    .pm-thumb{width:64px;height:64px;object-fit:cover;flex-shrink:0;border:1px solid rgba(240,236,224,.08);cursor:none;opacity:.55;transition:opacity .25s,border-color .25s}
+    .pm-thumb:hover,.pm-thumb.active{opacity:1;border-color:rgba(240,236,224,.35)}
+
+    /* Info column */
+    .pm-info-col{overflow-y:auto;padding:2.4rem 2.8rem;display:flex;flex-direction:column;gap:1rem}
+    @media(max-width:768px){.pm-info-col{padding:1.6rem 1.4rem}}
+    .pm-cat-badge{display:inline-block;font-family:'Courier New',monospace;font-size:.65rem;letter-spacing:.28em;text-transform:uppercase;padding:.25rem .6rem;border:1px solid currentColor;margin-bottom:.4rem}
+    .pm-title{font-size:clamp(1.3rem,3vw,1.9rem);font-weight:400;line-height:1.3}
+    .pm-meta-row{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+    .pm-price{font-family:'Courier New',monospace;font-size:2.4rem;font-weight:700;color:#f0ece0;line-height:1}
+    .pm-price sup{font-size:1rem;opacity:.5;vertical-align:super;margin-right:.1em}
+    .pm-platform-badge{font-family:'Courier New',monospace;font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;padding:.3rem .7rem;background:rgba(240,236,224,.06);border:1px solid rgba(240,236,224,.1);color:rgba(240,236,224,.6)}
+    .pm-condition-badge{font-family:'Courier New',monospace;font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;padding:.3rem .7rem;background:rgba(240,236,224,.04);border:1px solid rgba(240,236,224,.08);color:rgba(240,236,224,.45)}
+    .pm-divider{height:1px;background:rgba(240,236,224,.07)}
+    .pm-desc{font-size:.9rem;line-height:1.8;color:rgba(240,236,224,.55)}
+    .pm-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:.65rem}
+    .pm-cell{border:1px solid rgba(240,236,224,.07);padding:.65rem .8rem}
+    .pm-lbl{font-family:'Courier New',monospace;font-size:.6rem;letter-spacing:.2em;text-transform:uppercase;color:rgba(240,236,224,.28);margin-bottom:.25rem}
+    .pm-val{font-size:.85rem;color:#f0ece0}
+    .pm-tags{display:flex;flex-wrap:wrap;gap:.4rem}
+    .pm-tag{font-family:'Courier New',monospace;font-size:.6rem;letter-spacing:.14em;text-transform:uppercase;padding:.22rem .5rem;border:1px solid rgba(240,236,224,.1);color:rgba(240,236,224,.38)}
+    /* color + size selectors */
+    .pm-selector-label{font-family:'Courier New',monospace;font-size:.6rem;letter-spacing:.2em;text-transform:uppercase;color:rgba(240,236,224,.28);margin-bottom:.6rem;display:flex;gap:.5rem;align-items:center}
+    .pm-selector-label .sel-val{color:#f0ece0;font-size:.7rem;letter-spacing:.1em;text-transform:none}
+    .pm-colors{display:flex;gap:.55rem;flex-wrap:wrap;align-items:center}
+    .pm-cswatch{width:28px;height:28px;border-radius:50%;border:2px solid transparent;cursor:none;transition:transform .2s,border-color .2s,box-shadow .2s;flex-shrink:0;position:relative}
+    .pm-cswatch:hover{transform:scale(1.18)}
+    .pm-cswatch.active{border-color:#f0ece0;box-shadow:0 0 0 1px rgba(240,236,224,.3)}
+    .pm-cswatch.active::after{content:'✓';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.55rem;color:#fff;text-shadow:0 0 3px #000}
+    .pm-sizes{display:flex;flex-wrap:wrap;gap:.45rem}
+    .pm-size-chip{font-family:'Courier New',monospace;font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;padding:.42rem .72rem;border:1px solid rgba(240,236,224,.15);color:rgba(240,236,224,.45);cursor:none;transition:all .2s;background:transparent;white-space:nowrap}
+    .pm-size-chip:hover{border-color:rgba(240,236,224,.4);color:rgba(240,236,224,.8)}
+    .pm-size-chip.active{border-color:#f0ece0;color:#f0ece0;background:rgba(240,236,224,.07)}
+    .pm-size-chip.unavail{opacity:.22;text-decoration:line-through;cursor:not-allowed}
+    .pm-size-chip.unavail:hover{border-color:rgba(240,236,224,.15);color:rgba(240,236,224,.22);background:transparent}
+
+    /* Action buttons */
+    .pm-actions{display:flex;flex-direction:column;gap:.7rem;margin-top:.5rem}
+    .btn-primary{width:100%;padding:1rem 1.4rem;background:#f0ece0;color:#080810;border:none;font-family:'Courier New',monospace;font-size:.78rem;letter-spacing:.22em;text-transform:uppercase;cursor:none;transition:background .25s,transform .15s;font-weight:600}
+    .btn-primary:hover{background:#fff;transform:translateY(-1px)}
+    .btn-primary:active{transform:translateY(0)}
+    .btn-secondary{width:100%;padding:1rem 1.4rem;background:transparent;color:rgba(240,236,224,.6);border:1px solid rgba(240,236,224,.18);font-family:'Courier New',monospace;font-size:.78rem;letter-spacing:.22em;text-transform:uppercase;cursor:none;transition:all .25s}
+    .btn-secondary:hover{color:#f0ece0;border-color:rgba(240,236,224,.45);background:rgba(240,236,224,.04)}
+    .btn-secondary.wishlisted{color:#e8a598;border-color:rgba(232,165,152,.4);background:rgba(232,165,152,.06)}
+    .btn-link{width:100%;padding:.8rem 1.4rem;background:transparent;color:rgba(240,236,224,.35);border:1px solid rgba(240,236,224,.08);font-family:'Courier New',monospace;font-size:.72rem;letter-spacing:.2em;text-transform:uppercase;cursor:none;transition:all .25s;text-align:center}
+    .btn-link:hover{color:rgba(240,236,224,.7);border-color:rgba(240,236,224,.2)}
+    .pm-qty-row{display:flex;align-items:center;gap:.8rem}
+    .qty-label{font-family:'Courier New',monospace;font-size:.68rem;letter-spacing:.15em;text-transform:uppercase;color:rgba(240,236,224,.35)}
+    .qty-ctrl{display:flex;align-items:center;gap:0;border:1px solid rgba(240,236,224,.15)}
+    .qty-btn{background:none;border:none;color:rgba(240,236,224,.7);font-size:1rem;width:32px;height:32px;cursor:none;transition:background .2s;font-family:'Courier New',monospace}
+    .qty-btn:hover{background:rgba(240,236,224,.08);color:#f0ece0}
+    .qty-num{font-family:'Courier New',monospace;font-size:.85rem;min-width:32px;text-align:center;color:#f0ece0;line-height:32px}
+    .pm-in-cart-note{font-family:'Courier New',monospace;font-size:.65rem;letter-spacing:.12em;color:rgba(140,200,140,.7);display:none}
+    .pm-in-cart-note.show{display:block}
+
+    /* ═══════════════════════════════════════════════
+       WISHLIST PAGE
+    ═══════════════════════════════════════════════ */
+    #wishlist-page .wl-body{flex:1;padding:2rem 2.4rem;overflow-y:auto}
+    .wl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1.2rem}
+    .wl-card{background:#0e0e18;border:1px solid rgba(240,236,224,.07);display:flex;flex-direction:column;transition:border-color .3s}
+    .wl-card:hover{border-color:rgba(240,236,224,.18)}
+    .wl-card-img{width:100%;height:200px;object-fit:cover;display:block;cursor:none}
+    .wl-card-body{padding:1rem}
+    .wl-card-cat{font-family:'Courier New',monospace;font-size:.6rem;letter-spacing:.22em;text-transform:uppercase;margin-bottom:.4rem}
+    .wl-card-title{font-size:.9rem;line-height:1.3;margin-bottom:.5rem;color:#f0ece0}
+    .wl-card-price{font-family:'Courier New',monospace;font-size:1.3rem;font-weight:700;margin-bottom:.9rem;color:#f0ece0}
+    .wl-card-actions{display:flex;flex-direction:column;gap:.5rem}
+    .btn-sm-primary{padding:.65rem .8rem;background:#f0ece0;color:#080810;border:none;font-family:'Courier New',monospace;font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;cursor:none;transition:background .25s;width:100%}
+    .btn-sm-primary:hover{background:#fff}
+    .btn-sm-danger{padding:.65rem .8rem;background:transparent;color:rgba(232,100,100,.6);border:1px solid rgba(232,100,100,.2);font-family:'Courier New',monospace;font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;cursor:none;transition:all .25s;width:100%}
+    .btn-sm-danger:hover{color:rgba(232,100,100,.9);border-color:rgba(232,100,100,.45);background:rgba(232,100,100,.05)}
+    .btn-sm-secondary{padding:.65rem .8rem;background:transparent;color:rgba(240,236,224,.45);border:1px solid rgba(240,236,224,.1);font-family:'Courier New',monospace;font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;cursor:none;transition:all .25s;width:100%}
+    .btn-sm-secondary:hover{color:#f0ece0;border-color:rgba(240,236,224,.3)}
+    .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;min-height:300px;gap:1rem;color:rgba(240,236,224,.25)}
+    .empty-state .es-icon{font-size:3rem;opacity:.3}
+    .empty-state .es-title{font-size:1rem;letter-spacing:.2em;text-transform:uppercase;font-weight:300}
+    .empty-state .es-sub{font-family:'Courier New',monospace;font-size:.7rem;letter-spacing:.12em;color:rgba(240,236,224,.18)}
+
+    /* ═══════════════════════════════════════════════
+       CART PAGE
+    ═══════════════════════════════════════════════ */
+    #cart-page .cart-body{flex:1;display:grid;grid-template-columns:1fr 360px;gap:0;overflow:hidden}
+    @media(max-width:900px){#cart-page .cart-body{grid-template-columns:1fr;overflow-y:auto}}
+    .cart-items-col{overflow-y:auto;padding:1.8rem 2.4rem;border-right:1px solid rgba(240,236,224,.07)}
+    @media(max-width:900px){.cart-items-col{border-right:none;border-bottom:1px solid rgba(240,236,224,.07)}}
+    .cart-items-title{font-family:'Courier New',monospace;font-size:.7rem;letter-spacing:.22em;text-transform:uppercase;color:rgba(240,236,224,.3);margin-bottom:1.4rem}
+    .cart-item{display:flex;gap:1.2rem;padding:1.2rem 0;border-bottom:1px solid rgba(240,236,224,.06)}
+    .cart-item:last-child{border-bottom:none}
+    .ci-img{width:90px;height:110px;object-fit:cover;flex-shrink:0;border:1px solid rgba(240,236,224,.07)}
+    .ci-info{flex:1;display:flex;flex-direction:column;gap:.4rem}
+    .ci-cat{font-family:'Courier New',monospace;font-size:.6rem;letter-spacing:.2em;text-transform:uppercase}
+    .ci-title{font-size:.9rem;line-height:1.3;color:#f0ece0}
+    .ci-meta{font-family:'Courier New',monospace;font-size:.65rem;color:rgba(240,236,224,.3);letter-spacing:.1em}
+    .ci-bottom{display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:.5rem}
+    .ci-price{font-family:'Courier New',monospace;font-size:1.1rem;font-weight:700;color:#f0ece0}
+    .ci-remove{background:none;border:none;color:rgba(240,236,224,.25);font-family:'Courier New',monospace;font-size:.62rem;letter-spacing:.12em;cursor:none;transition:color .25s;padding:.2rem .4rem}
+    .ci-remove:hover{color:rgba(232,100,100,.8)}
+    .ci-qty{display:flex;align-items:center;gap:.3rem;border:1px solid rgba(240,236,224,.1)}
+    .ci-qty button{background:none;border:none;color:rgba(240,236,224,.5);width:26px;height:26px;cursor:none;font-size:.85rem;transition:all .2s;font-family:'Courier New',monospace}
+    .ci-qty button:hover{background:rgba(240,236,224,.08);color:#f0ece0}
+    .ci-qty span{font-family:'Courier New',monospace;font-size:.8rem;min-width:26px;text-align:center;color:#f0ece0}
+
+    /* Cart summary */
+    .cart-summary-col{padding:1.8rem 2.2rem;display:flex;flex-direction:column;gap:1rem;background:#0b0b16}
+    @media(max-width:900px){.cart-summary-col{padding:1.6rem 2.4rem}}
+    .cs-title{font-family:'Courier New',monospace;font-size:.7rem;letter-spacing:.22em;text-transform:uppercase;color:rgba(240,236,224,.3);margin-bottom:.4rem}
+    .cs-row{display:flex;justify-content:space-between;align-items:center;font-family:'Courier New',monospace;font-size:.78rem;color:rgba(240,236,224,.55);padding:.3rem 0}
+    .cs-row.total{color:#f0ece0;font-size:.95rem;font-weight:700;border-top:1px solid rgba(240,236,224,.1);padding-top:.9rem;margin-top:.4rem}
+    .cs-note{font-family:'Courier New',monospace;font-size:.6rem;letter-spacing:.08em;color:rgba(240,236,224,.2);line-height:1.6;border:1px solid rgba(240,236,224,.07);padding:.7rem;margin-top:.3rem}
+    .cs-checkout{width:100%;padding:1.1rem;background:#f0ece0;color:#080810;border:none;font-family:'Courier New',monospace;font-size:.82rem;letter-spacing:.22em;text-transform:uppercase;cursor:none;transition:background .25s,transform .15s;font-weight:700;margin-top:auto}
+    .cs-checkout:hover{background:#fff;transform:translateY(-1px)}
+    .cs-checkout:disabled{opacity:.3;cursor:not-allowed;transform:none}
+    .cs-empty-note{font-family:'Courier New',monospace;font-size:.7rem;color:rgba(240,236,224,.25);text-align:center;padding:2rem 0}
+
+    /* ═══════════════════════════════════════════════
+       THANK YOU PAGE
+    ═══════════════════════════════════════════════ */
+    #thankyou-page{justify-content:center;align-items:center;text-align:center;gap:1.4rem;padding:3rem}
+    .ty-check{width:72px;height:72px;border-radius:50%;border:2px solid rgba(140,200,140,.5);display:flex;align-items:center;justify-content:center;font-size:2rem;color:rgba(140,200,140,.8);margin:0 auto;animation:ty-pop .6s cubic-bezier(.16,1,.3,1) forwards;transform:scale(0)}
+    @keyframes ty-pop{to{transform:scale(1)}}
+    .ty-title{font-size:clamp(2rem,5vw,3.5rem);font-weight:300;letter-spacing:.25em;text-transform:uppercase;color:#f0ece0}
+    .ty-subtitle{font-family:'Courier New',monospace;font-size:.82rem;letter-spacing:.2em;color:rgba(240,236,224,.35)}
+    .ty-order{font-family:'Courier New',monospace;font-size:.72rem;letter-spacing:.18em;color:rgba(240,236,224,.22);margin-top:.5rem}
+    .ty-divider{width:80px;height:1px;background:rgba(240,236,224,.12);margin:.5rem auto}
+    .ty-items{display:flex;flex-direction:column;gap:.5rem;max-width:420px;width:100%;margin:.5rem auto}
+    .ty-item{display:flex;justify-content:space-between;font-family:'Courier New',monospace;font-size:.72rem;color:rgba(240,236,224,.4);padding:.3rem 0;border-bottom:1px solid rgba(240,236,224,.04)}
+    .ty-total{display:flex;justify-content:space-between;font-family:'Courier New',monospace;font-size:.85rem;color:#f0ece0;padding:.6rem 0;max-width:420px;width:100%;margin:0 auto}
+    .ty-cta{padding:.95rem 2.4rem;background:rgba(240,236,224,.08);border:1px solid rgba(240,236,224,.15);color:#f0ece0;font-family:'Courier New',monospace;font-size:.75rem;letter-spacing:.22em;text-transform:uppercase;cursor:none;transition:all .25s;margin-top:1rem}
+    .ty-cta:hover{background:rgba(240,236,224,.14);border-color:rgba(240,236,224,.3)}
+
+    /* ─── SHARED UTILS ─── */
+    .tag{font-family:'Courier New',monospace;font-size:.6rem;letter-spacing:.15em;text-transform:uppercase;padding:.22rem .5rem;border:1px solid rgba(240,236,224,.1);color:rgba(240,236,224,.38)}
+    .cdot{width:15px;height:15px;border-radius:50%;border:1px solid rgba(240,236,224,.1)}
+  </style>
+</head>
+<body class="no-cursor">
+
+<canvas id="cur-trail"></canvas>
+<div id="cur-dot"></div>
+<div id="cur-ring2"></div>
+<div id="cur-ring"></div>
+
+<!-- ─── LOADER ─── -->
+<div id="loader">
+  <h1>FitFindr</h1>
+  <p class="sub">thrift. curated. yours.</p>
+  <div class="lbar"><div class="lbar-fill" id="lbar-fill"></div></div>
+  <div id="load-img-status">fetching product photos…</div>
+</div>
+
+<!-- ─── CANVAS / VIGNETTE ─── -->
+<div id="cvs-wrap"></div>
+<div id="vig"></div>
+
+<!-- ─── NAV ─── -->
+<nav>
+  <div class="logo">FitFindr</div>
+  <div id="count">40 pieces</div>
+  <div class="nav-actions">
+    <button class="nav-btn" id="nav-wish" title="Wishlist">
+      <span class="icon">♡</span>
+      <span>Saved</span>
+      <span class="badge" id="wish-badge">0</span>
+    </button>
+    <button class="nav-btn" id="nav-cart" title="Cart">
+      <span class="icon">⊡</span>
+      <span>Cart</span>
+      <span class="badge" id="cart-badge">0</span>
+    </button>
+  </div>
+</nav>
+
+<!-- ─── FILTERS ─── -->
+<div id="filters">
+  <button class="fbtn on" data-f="all">All</button>
+  <button class="fbtn" data-f="tops">Tops</button>
+  <button class="fbtn" data-f="bottoms">Bottoms</button>
+  <button class="fbtn" data-f="outerwear">Outerwear</button>
+  <button class="fbtn" data-f="shoes">Shoes</button>
+  <button class="fbtn" data-f="accessories">Accessories</button>
+</div>
+
+<div id="htag"></div>
+
+<div id="srch-wrap">
+  <input id="srch" type="text" placeholder="search style, color, size… (e.g. vintage black under $30)" autocomplete="off"/>
+</div>
+<div id="hint">drag to spin &nbsp;·&nbsp; scroll to glide &nbsp;·&nbsp; click to discover</div>
+
+<!-- ═══════════════════════════════════════
+     PRODUCT MODAL — Amazon-style big view
+════════════════════════════════════════ -->
+<div class="overlay-page" id="product-modal">
+  <div class="ov-header">
+    <button class="ov-back" id="pm-back">Back to Shop</button>
+    <span class="ov-title" id="pm-header-title"></span>
+    <div style="width:120px"></div>
+  </div>
+  <div class="pm-body">
+    <!-- Image column -->
+    <div class="pm-img-col">
+      <div class="pm-img-main-wrap" id="pm-zoom-wrap">
+        <img id="pm-img-main" class="pm-img-main" src="" alt="" crossorigin="anonymous"/>
+        <span class="zoom-hint">hover to zoom</span>
+      </div>
+      <div class="pm-img-thumbs" id="pm-thumbs"></div>
+    </div>
+    <!-- Info column -->
+    <div class="pm-info-col" id="pm-info"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════
+     WISHLIST PAGE
+════════════════════════════════════ -->
+<div class="overlay-page" id="wishlist-page">
+  <div class="ov-header">
+    <button class="ov-back" id="wl-back">Back to Shop</button>
+    <span class="ov-title">Saved Items</span>
+    <span id="wl-count" style="font-family:'Courier New',monospace;font-size:.7rem;color:rgba(240,236,224,.3);letter-spacing:.12em"></span>
+  </div>
+  <div class="wl-body">
+    <div class="wl-grid" id="wl-grid"></div>
+    <div class="empty-state" id="wl-empty" style="display:none">
+      <div class="es-icon">♡</div>
+      <div class="es-title">Nothing saved yet</div>
+      <div class="es-sub">Click the heart on any item to save it here</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════
+     CART PAGE
+════════════════════════════════ -->
+<div class="overlay-page" id="cart-page">
+  <div class="ov-header">
+    <button class="ov-back" id="cart-back">Back to Shop</button>
+    <span class="ov-title">Your Cart</span>
+    <span id="cart-item-count" style="font-family:'Courier New',monospace;font-size:.7rem;color:rgba(240,236,224,.3);letter-spacing:.12em"></span>
+  </div>
+  <div class="cart-body">
+    <div class="cart-items-col">
+      <div class="cart-items-title">Items</div>
+      <div id="cart-items-list"></div>
+      <div class="empty-state" id="cart-empty" style="display:none">
+        <div class="es-icon">⊡</div>
+        <div class="es-title">Your cart is empty</div>
+        <div class="es-sub">Add items from the shop</div>
+      </div>
+    </div>
+    <div class="cart-summary-col">
+      <div class="cs-title">Order Summary</div>
+      <div id="cart-summary-rows"></div>
+      <div class="cs-note">Items ship directly from each seller's platform. Pricing shown is as listed on the original platform.</div>
+      <button class="cs-checkout" id="cs-checkout">Complete Purchase</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════
+     THANK YOU PAGE
+════════════════════════════════ -->
+<div class="overlay-page" id="thankyou-page">
+  <div class="ty-check" id="ty-check">✓</div>
+  <div class="ty-title">Thank You!</div>
+  <div class="ty-subtitle">Your order has been placed</div>
+  <div class="ty-order" id="ty-order-num"></div>
+  <div class="ty-divider"></div>
+  <div class="ty-items" id="ty-items"></div>
+  <div class="ty-total" id="ty-total"></div>
+  <button class="ty-cta" id="ty-cta">Continue Shopping</button>
+</div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js';
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  DATA
+// ─────────────────────────────────────────────────────────────────────────────
+const LISTINGS = [
+  {id:"lst_001",title:"Vintage Levi's 501 Jeans",description:"Classic 501s in a perfect medium wash. Some light fading at the knees which adds to the vintage look. No rips or stains.",category:"bottoms",style_tags:["vintage","classic","denim","streetwear"],size:"W30 L30",condition:"good",price:38,colors:["blue","indigo"],brand:"Levi's",platform:"depop"},
+  {id:"lst_002",title:"Y2K Baby Tee — Butterfly Print",description:"Super cute early 2000s baby tee with butterfly graphic. Fitted crop length. Tag says medium but fits like a small.",category:"tops",style_tags:["y2k","vintage","graphic tee","cottagecore"],size:"S/M",condition:"excellent",price:18,colors:["white","pink","purple"],brand:null,platform:"depop"},
+  {id:"lst_003",title:"Oversized Flannel Shirt",description:"Classic oversized flannel. Great layering piece. A few tiny pulls in the fabric but nothing visible when worn.",category:"tops",style_tags:["grunge","vintage","flannel","streetwear"],size:"XL (oversized)",condition:"good",price:22,colors:["red","black"],brand:"Woolrich",platform:"thredUp"},
+  {id:"lst_004",title:"90s Track Jacket — Navy/White",description:"Authentic 90s track jacket with stripe detail down the sleeves. Full zip. Lightweight — great for layering.",category:"outerwear",style_tags:["90s","vintage","athletic","streetwear"],size:"M",condition:"excellent",price:45,colors:["navy","white"],brand:"Champion",platform:"poshmark"},
+  {id:"lst_005",title:"Corduroy Wide-Leg Pants — Rust",description:"Beautiful rust-colored cords in a wide-leg silhouette. High-waisted. Minor pilling on the seat.",category:"bottoms",style_tags:["vintage","cottagecore","70s","earth tones"],size:"W28",condition:"good",price:32,colors:["rust","orange"],brand:null,platform:"depop"},
+  {id:"lst_006",title:"Graphic Tee — 2003 Tour Bootleg",description:"Vintage-style bootleg tee with faded graphic. Slightly boxy fit. 100% cotton, soft and worn-in.",category:"tops",style_tags:["graphic tee","vintage","grunge","streetwear","band tee"],size:"L",condition:"good",price:24,colors:["black"],brand:null,platform:"depop"},
+  {id:"lst_007",title:"Denim Jacket — Light Wash, Cropped",description:"Cropped denim jacket in a light wash. Great structured shoulders. Blank canvas — perfect to customize.",category:"outerwear",style_tags:["denim","vintage","classic","streetwear"],size:"S",condition:"excellent",price:42,colors:["light blue"],brand:"Wrangler",platform:"poshmark"},
+  {id:"lst_008",title:"Knit Cardigan — Chunky Brown",description:"Super cozy oversized cardigan. Earth-tone brown, chunky knit. Hits at the hip. Perfect for layering.",category:"tops",style_tags:["cottagecore","cozy","oversized","earth tones","knitwear"],size:"One Size",condition:"excellent",price:35,colors:["brown","tan"],brand:null,platform:"depop"},
+  {id:"lst_009",title:"Platform Mary Janes — Black Patent",description:"Patent leather platform Mary Janes. 1.5 inch platform. Some light scuffing on the toe box.",category:"shoes",style_tags:["y2k","goth","platform","90s"],size:"US 7",condition:"good",price:55,colors:["black"],brand:"Demonia",platform:"depop"},
+  {id:"lst_010",title:"Vintage Windbreaker — Purple/Teal",description:"Color block windbreaker from the early 90s. Packable, lightweight. The kind your dad definitely owned.",category:"outerwear",style_tags:["90s","vintage","athletic","color block","streetwear"],size:"L",condition:"good",price:40,colors:["purple","teal","black"],brand:null,platform:"thredUp"},
+  {id:"lst_011",title:"Low-Rise Cargo Pants — Khaki",description:"Y2K era low-rise cargo pants. Lots of pockets. Khaki color, slightly distressed at the hems.",category:"bottoms",style_tags:["y2k","cargo","2000s","streetwear"],size:"W29",condition:"fair",price:27,colors:["khaki","tan"],brand:null,platform:"poshmark"},
+  {id:"lst_012",title:"Oversized Crewneck — Vintage Navy",description:"Perfectly faded navy crewneck. Genuinely vintage. Ribbed cuffs and hem.",category:"tops",style_tags:["vintage","basics","oversized","classic"],size:"XL",condition:"good",price:20,colors:["navy"],brand:null,platform:"thredUp"},
+  {id:"lst_013",title:"90s Silk Slip Dress — Floral",description:"Delicate 90s slip dress in a muted floral print. Midi length, adjustable straps.",category:"bottoms",style_tags:["90s","vintage","feminine","floral","cottagecore"],size:"M",condition:"good",price:30,colors:["ivory","dusty pink","green"],brand:null,platform:"depop"},
+  {id:"lst_014",title:"Leather Belt — Brown Braided",description:"Genuine leather braided belt. Adjustable, multiple holes. Classic Western buckle.",category:"accessories",style_tags:["vintage","western","classic","earth tones"],size:"One Size",condition:"excellent",price:12,colors:["brown"],brand:null,platform:"thredUp"},
+  {id:"lst_015",title:"Vintage Graphic Hoodie — Faded Black",description:"Faded black pullover hoodie with barely-visible vintage graphic on the chest.",category:"tops",style_tags:["vintage","grunge","graphic","streetwear"],size:"L",condition:"fair",price:26,colors:["black","charcoal"],brand:null,platform:"depop"},
+  {id:"lst_016",title:"High-Waisted Denim Shorts",description:"DIY cutoff denim shorts from Levi's 501s. Raw hem, slightly frayed. High-waisted.",category:"bottoms",style_tags:["vintage","denim","summer","classic"],size:"W27",condition:"good",price:24,colors:["light blue","blue"],brand:"Levi's",platform:"poshmark"},
+  {id:"lst_017",title:"Mesh Long-Sleeve — Black",description:"Sheer black mesh long-sleeve. Great for layering under a graphic tee or over a bralette.",category:"tops",style_tags:["y2k","grunge","goth","layering"],size:"S/M",condition:"excellent",price:15,colors:["black"],brand:null,platform:"depop"},
+  {id:"lst_018",title:"Vintage Linen Blazer — Cream",description:"Lightweight linen blazer in cream. Relaxed fit, unstructured shoulders.",category:"outerwear",style_tags:["vintage","classic","linen","cottagecore","minimal"],size:"M/L",condition:"excellent",price:38,colors:["cream","off-white"],brand:null,platform:"thredUp"},
+  {id:"lst_019",title:"Platform Sneakers — White Chunky",description:"White chunky platform sneakers. Very late 90s / early 2000s energy. Velcro straps.",category:"shoes",style_tags:["y2k","platform","90s","streetwear"],size:"US 8",condition:"good",price:48,colors:["white"],brand:null,platform:"poshmark"},
+  {id:"lst_020",title:"Henley Long Sleeve — Washed Burgundy",description:"Soft washed henley in a rich burgundy. Three-button placket. Slightly shrunken/cropped fit.",category:"tops",style_tags:["vintage","basics","earth tones","classic"],size:"M",condition:"excellent",price:16,colors:["burgundy","wine"],brand:null,platform:"thredUp"},
+  {id:"lst_021",title:"Straight Leg Trousers — Olive",description:"Olive straight-leg trousers. High-waisted, with a center crease.",category:"bottoms",style_tags:["earth tones","classic","minimal","vintage"],size:"W30",condition:"excellent",price:29,colors:["olive","green"],brand:null,platform:"poshmark"},
+  {id:"lst_022",title:"90s Leather Bomber — Black",description:"Genuine leather bomber jacket. Classic 90s silhouette, slightly boxy. Ribbed collar, cuffs, and hem.",category:"outerwear",style_tags:["90s","vintage","leather","classic","grunge"],size:"M",condition:"good",price:75,colors:["black"],brand:null,platform:"depop"},
+  {id:"lst_023",title:"Crochet Halter Top — Cream",description:"Handmade-looking crochet halter. Ties at the neck and back.",category:"tops",style_tags:["cottagecore","boho","crochet","summer"],size:"S/M",condition:"excellent",price:22,colors:["cream","off-white"],brand:null,platform:"depop"},
+  {id:"lst_024",title:"Vintage Polo Shirt — Forest Green",description:"Classic polo in forest green. Short sleeve, ribbed collar. Goes with everything.",category:"tops",style_tags:["vintage","preppy","classic","earth tones"],size:"M",condition:"good",price:18,colors:["green","forest green"],brand:"Ralph Lauren",platform:"thredUp"},
+  {id:"lst_025",title:"Wide-Leg Linen Trousers — Natural",description:"Relaxed wide-leg linen trousers. Drawstring waist. Very breathable.",category:"bottoms",style_tags:["cottagecore","minimal","linen","earth tones","summer"],size:"M/L",condition:"excellent",price:34,colors:["natural","ecru","tan"],brand:null,platform:"poshmark"},
+  {id:"lst_026",title:"Biker Shorts — Black, Shiny",description:"Shiny black biker shorts. High-waisted. Y2K-coded.",category:"bottoms",style_tags:["y2k","athletic","streetwear","2000s"],size:"S",condition:"excellent",price:14,colors:["black"],brand:null,platform:"depop"},
+  {id:"lst_027",title:"Oversized College Crewneck — Faded Red",description:"Classic college-style crewneck in a beautifully faded red.",category:"tops",style_tags:["vintage","athletic","oversized","classic"],size:"XL",condition:"good",price:21,colors:["red","faded red"],brand:null,platform:"thredUp"},
+  {id:"lst_028",title:"Suede Chelsea Boots — Tan",description:"Tan suede Chelsea boots with elastic side panels. Stacked heel.",category:"shoes",style_tags:["vintage","classic","western","earth tones"],size:"US 8.5",condition:"fair",price:44,colors:["tan","camel"],brand:null,platform:"poshmark"},
+  {id:"lst_029",title:"Silk Button-Down — Sage Green",description:"Loose silk (feel) button-down in sage green. Can be worn open as a layer.",category:"tops",style_tags:["vintage","minimal","earth tones","cottagecore"],size:"M",condition:"excellent",price:28,colors:["sage","green"],brand:null,platform:"depop"},
+  {id:"lst_030",title:"Vintage Knit Vest — Argyle Brown",description:"Classic argyle knit vest in brown and cream. V-neck. Dark academia aesthetic.",category:"tops",style_tags:["vintage","preppy","knitwear","dark academia","earth tones"],size:"M",condition:"good",price:25,colors:["brown","cream","tan"],brand:null,platform:"thredUp"},
+  {id:"lst_031",title:"Baggy Carpenter Jeans — Dark Wash",description:"Baggy carpenter jeans with hammer loop. Dark wash. Major 90s workwear vibes.",category:"bottoms",style_tags:["90s","vintage","streetwear","baggy","workwear"],size:"W32",condition:"good",price:36,colors:["dark blue","indigo"],brand:null,platform:"depop"},
+  {id:"lst_032",title:"Shacket — Olive Canvas",description:"Olive canvas shacket — thicker than a shirt, lighter than a jacket.",category:"outerwear",style_tags:["earth tones","classic","layering","minimal"],size:"M/L",condition:"excellent",price:33,colors:["olive","green"],brand:null,platform:"poshmark"},
+  {id:"lst_033",title:"Vintage Band Tee — Faded Grey",description:"Faded grey band-style tee with distressed graphic. Fits boxy.",category:"tops",style_tags:["vintage","grunge","band tee","graphic tee","streetwear"],size:"L",condition:"fair",price:19,colors:["grey","charcoal"],brand:null,platform:"depop"},
+  {id:"lst_034",title:"Bucket Hat — Reversible Brown Plaid",description:"Reversible bucket hat — plaid on one side, solid tan on the other.",category:"accessories",style_tags:["90s","streetwear","vintage","accessories"],size:"One Size",condition:"excellent",price:14,colors:["brown","tan"],brand:null,platform:"thredUp"},
+  {id:"lst_035",title:"Canvas Sneakers — Off-White",description:"Classic low-top canvas sneakers in off-white. Very minimal.",category:"shoes",style_tags:["classic","minimal","streetwear","basics"],size:"US 9",condition:"good",price:20,colors:["off-white","cream"],brand:null,platform:"poshmark"},
+  {id:"lst_036",title:"Velvet Blazer — Emerald Green",description:"Stunning emerald green velvet blazer. Fitted cut, padded shoulders.",category:"outerwear",style_tags:["vintage","statement","feminine","glam"],size:"S",condition:"good",price:52,colors:["emerald","green"],brand:null,platform:"depop"},
+  {id:"lst_037",title:"Straight Leg Black Jeans — Faded",description:"Faded black straight-leg jeans. Classic fit. Slightly cropped length.",category:"bottoms",style_tags:["vintage","classic","grunge","denim"],size:"W28",condition:"good",price:30,colors:["black","faded black"],brand:"Levi's",platform:"thredUp"},
+  {id:"lst_038",title:"Denim Vest — Studded",description:"Denim vest with silver stud detailing along the collar and pockets.",category:"outerwear",style_tags:["grunge","vintage","denim","customized","rock"],size:"M",condition:"good",price:27,colors:["medium blue"],brand:null,platform:"depop"},
+  {id:"lst_039",title:"Mini Shoulder Bag — Tan Leather",description:"Tiny structured shoulder bag in tan leather. Gold hardware.",category:"accessories",style_tags:["vintage","classic","y2k","accessories"],size:"One Size",condition:"excellent",price:38,colors:["tan","camel"],brand:null,platform:"poshmark"},
+  {id:"lst_040",title:"Tie-Dye Long Sleeve — Pastel",description:"Hand tie-dyed long sleeve in soft pastel hues — pink, lavender, and mint.",category:"tops",style_tags:["tie-dye","cottagecore","colorful","streetwear"],size:"L/XL",condition:"excellent",price:17,colors:["pink","lavender","mint"],brand:null,platform:"depop"}
+];
+
+const PHOTO_IDS = [
+  "1542767852-d4fd4c6c0a48","1523381210434-271e8be1f52b","1574634271046-6a87b3e9cadf",
+  "1556906783-b630bdd4d5a2","1596902852634-37a42b2d9bda","1503342217505-b0a15ec3261c",
+  "1591047139829-d91aecb6caea","1578587018452-892bacefd3fc","1543163521-1bf539c55dd2",
+  "1614430590000-7f96d6b6c4e8","1594380890612-1b02a23f9ce6","1556821840-3a63f8550bf3",
+  "1515886657613-9f3515b0c78f","1553062407-98eeb64c6a6a","1556905055-8f358a7a47b2",
+  "1611312449408-fcece27cdbb7","1558618666-fcd25c85cd64","1507003211169-0a1dd7228f2d",
+  "1542291026-7eec264c27ff","1589984662646-eb93e6f1a5a4","1631217868264-e5b90bb7e133",
+  "1551028719-00167b16eac5","1517686469429-8bdb88b9f907","1581803118522-7b72a50f7e9f",
+  "1622290291468-a28f7a7dc6a8","1538805060514-7be4e63eb9b4","1495105787522-5adfd8b8ef0c",
+  "1548036161-f5d7f91b29e5","1549298916-b41d501d3772","1606293926249-ed32b9e6fc87",
+  "1544966503-7d3ff04bb7c6","1564584217132-2271feaeb3c5","1529720317453-c8da503f2051",
+  "1521369909449-0cf41ebd5a53","1460353581641-37baddab0fa2","1540221652346-4f0d1b9d0b2f",
+  "1441984904996-e0b6ba687e04","1576566588028-4147f3842f27","1584917865442-de89df76afd3",
+  "1554568218-a5e3e0e0a735"
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+const CAT = {
+  tops:        {hex:'#E8A598',c:new THREE.Color('#E8A598')},
+  bottoms:     {hex:'#7BA7BC',c:new THREE.Color('#7BA7BC')},
+  outerwear:   {hex:'#8FAF8A',c:new THREE.Color('#8FAF8A')},
+  shoes:       {hex:'#C9AA7C',c:new THREE.Color('#C9AA7C')},
+  accessories: {hex:'#B8A0C8',c:new THREE.Color('#B8A0C8')},
+};
+const CMAP = {
+  blue:'#4a7ab5',indigo:'#3d4a8a',white:'#eeeae0',pink:'#e8a598',purple:'#8b5cf6',
+  red:'#b5443a',black:'#252530',navy:'#1e3a5f',rust:'#b5522a',orange:'#d4682a',
+  brown:'#7a5533',tan:'#c4a882',cream:'#f5f0e0',green:'#4a7a4a',sage:'#8faf8a',
+  olive:'#6b7a3a',khaki:'#b5a87a',grey:'#7a7a7a',charcoal:'#3a3a3a',teal:'#2a8a8a',
+  lavender:'#b8a0c8',mint:'#8ad4c0',ivory:'#f5f0e0',burgundy:'#6e2233',wine:'#5c1a2a',
+  camel:'#c4a070',emerald:'#2a7a4a','light blue':'#7ab0d4','dark blue':'#1e3a5f',
+  'off-white':'#ede0c4','faded red':'#a05040','faded black':'#2d2d36',
+  'forest green':'#2d5a2d','dusty pink':'#d4a0a0',natural:'#e8dcc8',ecru:'#ede0c4',
+  'medium blue':'#4a7ab5',
+};
+
+function unsplashUrl(pid, w=800, h=1000){
+  return `https://images.unsplash.com/photo-${pid}?w=${w}&h=${h}&fit=crop&crop=center&auto=format&q=80`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  STATE — wishlist + cart (persisted to localStorage)
+// ─────────────────────────────────────────────────────────────────────────────
+let wishlist = JSON.parse(localStorage.getItem('ff_wishlist')||'[]'); // array of listing ids
+let cart     = JSON.parse(localStorage.getItem('ff_cart')    ||'[]'); // [{id, qty}]
+
+function saveState(){
+  localStorage.setItem('ff_wishlist', JSON.stringify(wishlist));
+  localStorage.setItem('ff_cart',     JSON.stringify(cart));
+}
+
+function isWishlisted(id){ return wishlist.includes(id); }
+
+function toggleWishlist(id){
+  if(isWishlisted(id)){
+    wishlist = wishlist.filter(x=>x!==id);
+  } else {
+    wishlist.push(id);
+  }
+  saveState(); updateBadges(); updateWishlistPage();
+}
+
+function cartQty(id){
+  const e=cart.find(x=>x.id===id);
+  return e?e.qty:0;
+}
+
+function addToCart(id, qty=1){
+  const e=cart.find(x=>x.id===id);
+  if(e){ e.qty+=qty; } else { cart.push({id,qty}); }
+  saveState(); updateBadges(); updateCartPage();
+}
+
+function removeFromCart(id){
+  cart=cart.filter(x=>x.id!==id);
+  saveState(); updateBadges(); updateCartPage();
+}
+
+function setCartQty(id, qty){
+  if(qty<=0){ removeFromCart(id); return; }
+  const e=cart.find(x=>x.id===id);
+  if(e) e.qty=qty; else cart.push({id,qty});
+  saveState(); updateBadges(); updateCartPage();
+}
+
+function cartTotal(){
+  return cart.reduce((sum,e)=>{
+    const L=LISTINGS.find(l=>l.id===e.id);
+    return sum+(L?L.price*e.qty:0);
+  },0);
+}
+
+function updateBadges(){
+  const wb=document.getElementById('wish-badge');
+  const cb=document.getElementById('cart-badge');
+  wb.textContent=wishlist.length;
+  wb.classList.toggle('show',wishlist.length>0);
+  const cTotal=cart.reduce((s,e)=>s+e.qty,0);
+  cb.textContent=cTotal;
+  cb.classList.toggle('show',cTotal>0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  THREE.JS SCENE
+// ─────────────────────────────────────────────────────────────────────────────
+const cvs=document.createElement('canvas');
+document.getElementById('cvs-wrap').appendChild(cvs);
+const renderer=new THREE.WebGLRenderer({canvas:cvs,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.1;
+renderer.setClearColor(0x080810);
+const scene=new THREE.Scene();
+scene.fog=new THREE.FogExp2(0x080810,0.024);
+const camera=new THREE.PerspectiveCamera(56,innerWidth/innerHeight,0.1,120);
+camera.position.set(0,0,14);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.28));
+const sl1=new THREE.SpotLight(0xf0ece0,3,42,Math.PI/5,0.4);
+sl1.position.set(8,12,6);scene.add(sl1);
+const sl2=new THREE.SpotLight(0xe8a598,1.6,36,Math.PI/4,0.55);
+sl2.position.set(-10,4,4);scene.add(sl2);
+const sl3=new THREE.SpotLight(0x7ba7bc,1.2,32,Math.PI/4,0.65);
+sl3.position.set(4,-8,10);scene.add(sl3);
+
+// Grid
+{const m=new THREE.LineBasicMaterial({color:0x14142a,transparent:true,opacity:.65});
+const g=new THREE.BufferGeometry();const p=[];const S=60,N=30;
+for(let i=-N;i<=N;i++){p.push(-S,0,i*(S/N));p.push(S,0,i*(S/N));p.push(i*(S/N),0,-S);p.push(i*(S/N),0,S);}
+g.setAttribute('position',new THREE.Float32BufferAttribute(p,3));
+const grid=new THREE.LineSegments(g,m);grid.position.y=-15;scene.add(grid);}
+
+// Particles
+const PC=3800;const pG=new THREE.BufferGeometry();
+const pP=new Float32Array(PC*3),pC=new Float32Array(PC*3),pV=new Float32Array(PC*3);
+const dpal=[new THREE.Color('#E8A598').multiplyScalar(.65),new THREE.Color('#7BA7BC').multiplyScalar(.65),new THREE.Color('#8FAF8A').multiplyScalar(.65),new THREE.Color('#C9AA7C').multiplyScalar(.65),new THREE.Color('#B8A0C8').multiplyScalar(.65),new THREE.Color('#f0ece0').multiplyScalar(.38)];
+for(let i=0;i<PC;i++){const r=10+Math.random()*18,θ=Math.random()*Math.PI*2,φ=(Math.random()-.5)*Math.PI*.75;
+pP[i*3]=r*Math.cos(θ)*Math.cos(φ)+(Math.random()-.5)*5;pP[i*3+1]=r*Math.sin(φ)*2.2+(Math.random()-.5)*7;pP[i*3+2]=r*Math.sin(θ)*Math.cos(φ)+(Math.random()-.5)*5;
+pV[i*3]=(Math.random()-.5)*.004;pV[i*3+1]=(Math.random()-.5)*.003;pV[i*3+2]=(Math.random()-.5)*.004;
+const c=dpal[i%dpal.length];pC[i*3]=c.r;pC[i*3+1]=c.g;pC[i*3+2]=c.b;}
+pG.setAttribute('position',new THREE.BufferAttribute(pP,3));
+pG.setAttribute('color',new THREE.BufferAttribute(pC,3));
+const dust=new THREE.Points(pG,new THREE.PointsMaterial({size:.052,vertexColors:true,transparent:true,opacity:.48,sizeAttenuation:true,blending:THREE.AdditiveBlending,depthWrite:false}));
+scene.add(dust);
+
+// Card builders
+function makeOverlayTex(catHex){
+  const W=512,H=640;const c=document.createElement('canvas');c.width=W;c.height=H;
+  const x=c.getContext('2d');
+  const g=x.createLinearGradient(0,H*.28,0,H);
+  g.addColorStop(0,'rgba(8,8,16,0)');g.addColorStop(.6,'rgba(8,8,16,.65)');g.addColorStop(1,'rgba(8,8,16,.96)');
+  x.fillStyle=g;x.fillRect(0,0,W,H);
+  x.fillStyle=catHex;x.fillRect(0,0,W,3);
+  return new THREE.CanvasTexture(c);
+}
+function makeInfoTex(L){
+  const W=512,H=220;const c=document.createElement('canvas');c.width=W;c.height=H;
+  const x=c.getContext('2d');const cc=CAT[L.category]||{hex:'#f0ece0'};
+  x.fillStyle=cc.hex+'28';x.fillRect(18,16,95,20);
+  x.fillStyle=cc.hex;x.font='600 9px Courier New';x.fillText(L.category.toUpperCase(),26,30);
+  x.font='bold 44px Georgia';x.fillStyle='#f0ece0';x.fillText(`$${L.price}`,18,88);
+  x.font='15px Georgia';x.fillStyle='rgba(240,236,224,.8)';
+  const words=L.title.split(' ');let line='',y=112,lh=20;
+  for(const w of words){const t=line+w+' ';if(x.measureText(t).width>W-36&&line){x.fillText(line.trim(),18,y);line=w+' ';y+=lh;}else line=t;}
+  x.fillText(line.trim(),18,y);
+  x.font='9px Courier New';x.fillStyle='rgba(240,236,224,.28)';
+  x.fillText(`${L.size}  ·  ${L.condition.toUpperCase()}  ·  ${L.platform}`,18,H-22);
+  if(L.brand){x.fillStyle='rgba(240,236,224,.48)';x.font='italic 11px Georgia';x.fillText(L.brand,W-16-x.measureText(L.brand).width,H-22);}
+  (L.colors||[]).forEach((col,ci)=>{const hex=CMAP[col.toLowerCase()]||'#888';const cx2=W-18-ci*20,cy2=H-46;x.beginPath();x.arc(cx2,cy2,6,0,Math.PI*2);x.fillStyle=hex;x.fill();x.strokeStyle='rgba(255,255,255,.1)';x.lineWidth=1;x.stroke();});
+  return new THREE.CanvasTexture(c);
+}
+function makeShimmerTex(cat,catHex){
+  const W=512,H=640;const c=document.createElement('canvas');c.width=W;c.height=H;
+  const x=c.getContext('2d');
+  const g=x.createLinearGradient(0,0,W,H);g.addColorStop(0,'#0d0d1a');g.addColorStop(.5,catHex+'14');g.addColorStop(1,'#0a0a14');
+  x.fillStyle=g;x.fillRect(0,0,W,H);
+  const icons={tops:'◈',bottoms:'◉',outerwear:'◆',shoes:'◇',accessories:'○'};
+  x.fillStyle=catHex+'30';x.font='52px Georgia';x.textAlign='center';x.fillText(icons[cat]||'◈',W/2,H/2);x.textAlign='left';
+  return new THREE.CanvasTexture(c);
+}
+
+const cardGroup=new THREE.Group();scene.add(cardGroup);
+const CW=2.5,CH=3.5;const cards=[];
+let loaded=0;const status=document.getElementById('load-img-status');
+const texLoader=new THREE.TextureLoader();
+
+function helixPos(idx,total){
+  const t=idx/Math.max(total-1,1);const angle=t*Math.PI*8-Math.PI*4;const R=5.8;
+  return {x:Math.cos(angle)*R,y:(t-.5)*26,z:Math.sin(angle)*R};
+}
+
+LISTINGS.forEach((L,i)=>{
+  const cc=CAT[L.category]||{hex:'#f0ece0',c:new THREE.Color('#f0ece0')};
+  const cg=new THREE.Group();
+  const shimTex=makeShimmerTex(L.category,cc.hex);
+  const imgMat=new THREE.MeshStandardMaterial({map:shimTex,transparent:false,roughness:.88,metalness:.04});
+  cg.add(new THREE.Mesh(new THREE.PlaneGeometry(CW,CH),imgMat));
+  const overlayMat=new THREE.MeshBasicMaterial({map:makeOverlayTex(cc.hex),transparent:true,depthWrite:false});
+  const om=new THREE.Mesh(new THREE.PlaneGeometry(CW,CH),overlayMat);om.position.z=0.004;cg.add(om);
+  const infoH=CH*(220/640);const infoMat=new THREE.MeshBasicMaterial({map:makeInfoTex(L),transparent:true,depthWrite:false});
+  const im=new THREE.Mesh(new THREE.PlaneGeometry(CW,infoH),infoMat);im.position.y=-(CH/2)+(infoH/2);im.position.z=0.008;cg.add(im);
+  const glowMat=new THREE.MeshBasicMaterial({color:cc.c,transparent:true,opacity:.08,side:THREE.FrontSide});
+  const gm=new THREE.Mesh(new THREE.PlaneGeometry(CW+.07,CH+.07),glowMat);gm.position.z=-.012;cg.add(gm);
+  const p=helixPos(i,LISTINGS.length);
+  cg.position.set(p.x,p.y,p.z);cg.lookAt(0,p.y,0);
+  cg.userData={L,origPos:cg.position.clone(),targetPos:null,glowMat,imgMat,idx:i};
+  cardGroup.add(cg);cards.push(cg);
+  setTimeout(()=>{
+    texLoader.load(unsplashUrl(PHOTO_IDS[i],640,800),(tex)=>{
+      tex.wrapS=tex.wrapT=THREE.ClampToEdgeWrapping;tex.minFilter=THREE.LinearFilter;
+      imgMat.map=tex;imgMat.needsUpdate=true;
+      loaded++;const pct=Math.round(loaded/LISTINGS.length*100);
+      status.textContent=loaded===LISTINGS.length?'all photos loaded ✓':`fetching product photos… ${pct}%`;
+    },undefined,()=>{loaded++;});
+  },i*60);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  MOUSE / INTERACTION
+// ─────────────────────────────────────────────────────────────────────────────
+let mxn=0,myn=0,curX=-100,curY=-100;
+let camTX=0,camTY=0,camCX=0,camCY=0;
+let isDrag=false,dragX0=0,groupRotY=0,targetRotY=0;
+let hoveredCard=null;
+let sceneActive=true;
+
+// ── cursor state ──
+const dotEl  = document.getElementById('cur-dot');
+const ring1El= document.getElementById('cur-ring');
+const ring2El= document.getElementById('cur-ring2');
+const htagEl = document.getElementById('htag');
+
+// ring1 lags most, ring2 lags less
+let r1x=-100,r1y=-100, r2x=-100,r2y=-100;
+let prevCurX=-100,prevCurY=-100;
+let velX=0,velY=0,speed=0;
+
+// trail canvas
+const trailCvs=document.getElementById('cur-trail');
+const trailCtx=trailCvs.getContext('2d');
+function resizeTrail(){trailCvs.width=innerWidth;trailCvs.height=innerHeight;}
+resizeTrail();
+window.addEventListener('resize',resizeTrail);
+
+// trail history: [{x,y,age}]
+const TRAIL_LEN=18;
+const trail=Array.from({length:TRAIL_LEN},()=>({x:-100,y:-100,age:1}));
+
+const rc=new THREE.Raycaster();const mv=new THREE.Vector2();
+
+function allPickMeshes(){return sceneActive?cards.filter(c=>c.visible).flatMap(c=>[c.children[0],c.children[1]]):[];}
+function parentCard(mesh){let o=mesh;while(o&&!o.userData.L)o=o.parent;return o;}
+
+document.addEventListener('mousemove',e=>{
+  curX=e.clientX;curY=e.clientY;
+  mxn=(e.clientX/innerWidth)*2-1;myn=-(e.clientY/innerHeight)*2+1;
+  camTX=mxn*2.2;camTY=myn*1.1;
+  dotEl.style.left=curX+'px';dotEl.style.top=curY+'px';
+  if(isDrag&&sceneActive)targetRotY=groupRotY+(e.clientX-dragX0)*.006;
+});
+document.addEventListener('mousedown',e=>{
+  dotEl.classList.add('click');
+  if(sceneActive&&(e.target===cvs||e.target.closest?.('#cvs-wrap'))){isDrag=true;dragX0=e.clientX;}
+});
+document.addEventListener('mouseup',e=>{
+  dotEl.classList.remove('click');
+  if(isDrag&&Math.abs(e.clientX-dragX0)<6&&sceneActive)doClick();
+  isDrag=false;groupRotY=targetRotY;
+});
+document.addEventListener('wheel',e=>{if(sceneActive)targetRotY+=e.deltaY*.0024;},{passive:true});
+
+function doClick(){
+  mv.set(mxn,myn);rc.setFromCamera(mv,camera);
+  const hits=rc.intersectObjects(allPickMeshes());
+  if(hits.length){const cg=parentCard(hits[0].object);if(cg)openProductModal(cg.userData.L,cg.userData.idx);}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  OVERLAY MANAGEMENT
+// ─────────────────────────────────────────────────────────────────────────────
+function openOverlay(id){
+  sceneActive=false;
+  document.getElementById(id).classList.add('open');
+  htagEl.style.opacity='0';
+}
+function closeOverlay(id){
+  document.getElementById(id).classList.remove('open');
+  sceneActive=true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PRODUCT MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+let currentProduct=null;
+let currentProductIdx=0;
+let currentQty=1;
+
+function openProductModal(L, idx){
+  currentProduct=L; currentProductIdx=idx; currentQty=1;
+  document.getElementById('pm-header-title').textContent=L.title;
+  const cc=CAT[L.category]||{hex:'#f0ece0'};
+
+  // Main image
+  const mainImg=document.getElementById('pm-img-main');
+  mainImg.classList.remove('rdy'); mainImg.src='';
+  mainImg.onload=()=>mainImg.classList.add('rdy');
+  mainImg.src=unsplashUrl(PHOTO_IDS[idx],1200,1400);
+
+  // Thumbs — show 3 related items from same category
+  const thumbsEl=document.getElementById('pm-thumbs');
+  const related=LISTINGS.map((l,i)=>({l,i})).filter(x=>x.l.category===L.category&&x.l.id!==L.id).slice(0,4);
+  thumbsEl.innerHTML='';
+  // main thumb
+  const mainThumb=document.createElement('img');
+  mainThumb.className='pm-thumb active';mainThumb.crossOrigin='anonymous';
+  mainThumb.src=unsplashUrl(PHOTO_IDS[idx],120,120);mainThumb.alt='main';
+  mainThumb.addEventListener('click',()=>{
+    mainImg.src=unsplashUrl(PHOTO_IDS[idx],1200,1400);
+    thumbsEl.querySelectorAll('.pm-thumb').forEach(t=>t.classList.remove('active'));
+    mainThumb.classList.add('active');
+  });
+  thumbsEl.appendChild(mainThumb);
+  related.forEach(({l,i:ri})=>{
+    const t=document.createElement('img');
+    t.className='pm-thumb';t.crossOrigin='anonymous';
+    t.src=unsplashUrl(PHOTO_IDS[ri],120,120);t.alt=l.title;
+    t.addEventListener('click',()=>{
+      mainImg.classList.remove('rdy');mainImg.src='';
+      mainImg.onload=()=>mainImg.classList.add('rdy');
+      mainImg.src=unsplashUrl(PHOTO_IDS[ri],1200,1400);
+      thumbsEl.querySelectorAll('.pm-thumb').forEach(t2=>t2.classList.remove('active'));
+      t.classList.add('active');
+    });
+    thumbsEl.appendChild(t);
+  });
+
+  // Info
+  renderProductInfo(L);
+  openOverlay('product-modal');
+}
+
+function buildSizeOptions(listedSize){
+  const ladders=[
+    ['XXS','XS','S','S/M','M','M/L','L','XL','XXL'],
+    ['XS','S','M','L','XL'],
+    ['US 5','US 5.5','US 6','US 6.5','US 7','US 7.5','US 8','US 8.5','US 9','US 9.5','US 10','US 10.5','US 11'],
+    ['W24','W25','W26','W27','W28','W29','W30','W31','W32','W33','W34'],
+    ['One Size / Oversized','One Size'],
+  ];
+  const norm=listedSize.trim();
+  for(const ladder of ladders){
+    if(ladder.findIndex(s=>s.toLowerCase()===norm.toLowerCase())>=0){
+      return ladder.map(s=>({label:s,available:true}));
+    }
+  }
+  return [{label:norm,available:true}];
+}
+
+function renderProductInfo(L){
+  const cc=CAT[L.category]||{hex:'#f0ece0'};
+  const tags=(L.style_tags||[]).map(t=>`<span class="pm-tag">${t}</span>`).join('');
+  const colors=L.colors||[];
+  const sizeOpts=buildSizeOptions(L.size);
+
+  // pre-select first available color and the listed size
+  let selColor=colors[0]||null;
+  let selSize=L.size;
+
+  const wishlisted=isWishlisted(L.id);
+  const inCart=cartQty(L.id);
+
+  const cells=`
+    <div class="pm-cell"><div class="pm-lbl">Condition</div><div class="pm-val">${L.condition}</div></div>
+    <div class="pm-cell"><div class="pm-lbl">Platform</div><div class="pm-val">${L.platform}</div></div>
+    ${L.brand?`<div class="pm-cell"><div class="pm-lbl">Brand</div><div class="pm-val">${L.brand}</div></div>`:''}
+  `;
+
+  // Color swatches HTML
+  function colorSwatchesHTML(active){
+    return colors.map(c=>{
+      const hex=CMAP[c.toLowerCase()]||'#888';
+      const isActive=c===active;
+      return `<div class="pm-cswatch ${isActive?'active':''}" data-color="${c}" style="background:${hex}" title="${c}"></div>`;
+    }).join('');
+  }
+
+  // Size chips HTML
+  function sizeChipsHTML(active){
+    return sizeOpts.map(o=>{
+      const isActive=o.label.toLowerCase()===active.toLowerCase();
+      return `<button class="pm-size-chip ${isActive?'active':''} ${o.available?'':'unavail'}" data-size="${o.label}" ${o.available?'':'disabled'}>${o.label}</button>`;
+    }).join('');
+  }
+
+  document.getElementById('pm-info').innerHTML=`
+    <div>
+      <div class="pm-cat-badge" style="color:${cc.hex};border-color:${cc.hex}40">${L.category}</div>
+      <h1 class="pm-title">${L.title}</h1>
+    </div>
+    <div class="pm-meta-row">
+      <div class="pm-price"><sup>$</sup>${L.price.toFixed(2)}</div>
+      <span class="pm-platform-badge">${L.platform}</span>
+      <span class="pm-condition-badge">${L.condition}</span>
+    </div>
+    <div class="pm-divider"></div>
+    <p class="pm-desc">${L.description}</p>
+    <div class="pm-detail-grid">${cells}</div>
+    <div class="pm-tags">${tags}</div>
+
+    ${colors.length>0?`
+    <div>
+      <div class="pm-selector-label">Color <span class="sel-val" id="pm-sel-color-name">${selColor||''}</span></div>
+      <div class="pm-colors" id="pm-color-swatches">${colorSwatchesHTML(selColor)}</div>
+    </div>`:''}
+
+    <div>
+      <div class="pm-selector-label">Size <span class="sel-val" id="pm-sel-size-name">${selSize}</span></div>
+      <div class="pm-sizes" id="pm-size-chips">${sizeChipsHTML(selSize)}</div>
+    </div>
+
+    <div class="pm-divider"></div>
+    <div class="pm-qty-row">
+      <span class="qty-label">Qty</span>
+      <div class="qty-ctrl">
+        <button class="qty-btn" id="pm-qty-minus">−</button>
+        <span class="qty-num" id="pm-qty-num">1</span>
+        <button class="qty-btn" id="pm-qty-plus">+</button>
+      </div>
+      <span class="pm-in-cart-note ${inCart?'show':''}" id="pm-in-cart-note">
+        ${inCart?`${inCart} already in cart`:''}
+      </span>
+    </div>
+    <div class="pm-actions">
+      <button class="btn-primary" id="pm-add-cart">Add to Cart</button>
+      <button class="btn-secondary ${wishlisted?'wishlisted':''}" id="pm-add-wish">
+        ${wishlisted?'♥ Saved to Wishlist':'♡ Save to Wishlist'}
+      </button>
+      <button class="btn-link" id="pm-view-platform">View on ${L.platform} ↗</button>
+    </div>
+  `;
+
+  // ── Color swatch clicks ──
+  document.getElementById('pm-color-swatches')?.addEventListener('click',e=>{
+    const sw=e.target.closest('.pm-cswatch');if(!sw)return;
+    selColor=sw.dataset.color;
+    document.getElementById('pm-color-swatches').innerHTML=colorSwatchesHTML(selColor);
+    document.getElementById('pm-sel-color-name').textContent=selColor;
+  });
+
+  // ── Size chip clicks ──
+  document.getElementById('pm-size-chips')?.addEventListener('click',e=>{
+    const chip=e.target.closest('.pm-size-chip');
+    if(!chip||chip.disabled)return;
+    selSize=chip.dataset.size;
+    document.getElementById('pm-size-chips').innerHTML=sizeChipsHTML(selSize);
+    document.getElementById('pm-sel-size-name').textContent=selSize;
+  });
+
+  // ── Qty controls ──
+  document.getElementById('pm-qty-minus').addEventListener('click',()=>{
+    if(currentQty>1){ currentQty--; document.getElementById('pm-qty-num').textContent=currentQty; }
+  });
+  document.getElementById('pm-qty-plus').addEventListener('click',()=>{
+    currentQty++; document.getElementById('pm-qty-num').textContent=currentQty;
+  });
+
+  // ── Add to cart ──
+  document.getElementById('pm-add-cart').addEventListener('click',()=>{
+    addToCart(L.id, currentQty);
+    const btn=document.getElementById('pm-add-cart');
+    btn.textContent=`✓ Added (${selSize}${selColor?', '+selColor:''})`;
+    btn.style.background='rgba(140,200,140,.9)';
+    setTimeout(()=>{btn.textContent='Add to Cart';btn.style.background='';},2200);
+    const note=document.getElementById('pm-in-cart-note');
+    const total=cartQty(L.id);
+    note.textContent=`${total} in cart`;note.classList.add('show');
+  });
+
+  // ── Wishlist ──
+  document.getElementById('pm-add-wish').addEventListener('click',()=>{
+    toggleWishlist(L.id);
+    const wishlisted2=isWishlisted(L.id);
+    const btn=document.getElementById('pm-add-wish');
+    btn.textContent=wishlisted2?'♥ Saved to Wishlist':'♡ Save to Wishlist';
+    btn.classList.toggle('wishlisted',wishlisted2);
+  });
+
+  // view on platform
+  document.getElementById('pm-view-platform').addEventListener('click',()=>{
+    const urls={depop:'https://depop.com',poshmark:'https://poshmark.com',thredUp:'https://thredup.com'};
+    window.open(urls[L.platform]||'#','_blank');
+  });
+}
+
+document.getElementById('pm-back').addEventListener('click',()=>closeOverlay('product-modal'));
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  WISHLIST PAGE
+// ─────────────────────────────────────────────────────────────────────────────
+function updateWishlistPage(){
+  const grid=document.getElementById('wl-grid');
+  const empty=document.getElementById('wl-empty');
+  const wlCount=document.getElementById('wl-count');
+  grid.innerHTML='';
+  if(wishlist.length===0){
+    grid.style.display='none';empty.style.display='flex';
+    wlCount.textContent='';
+    return;
+  }
+  grid.style.display='grid';empty.style.display='none';
+  wlCount.textContent=`${wishlist.length} item${wishlist.length!==1?'s':''}`;
+  wishlist.forEach(id=>{
+    const idx=LISTINGS.findIndex(l=>l.id===id);
+    if(idx<0)return;
+    const L=LISTINGS[idx];const cc=CAT[L.category]||{hex:'#f0ece0'};
+    const card=document.createElement('div');card.className='wl-card';
+    card.innerHTML=`
+      <img class="wl-card-img" src="${unsplashUrl(PHOTO_IDS[idx],400,300)}" crossorigin="anonymous" alt="${L.title}" loading="lazy"/>
+      <div class="wl-card-body">
+        <div class="wl-card-cat" style="color:${cc.hex}">${L.category}</div>
+        <div class="wl-card-title">${L.title}</div>
+        <div class="wl-card-price">$${L.price}</div>
+        <div class="wl-card-actions">
+          <button class="btn-sm-primary wl-add-cart" data-id="${id}">Add to Cart</button>
+          <button class="btn-sm-secondary wl-view" data-id="${id}" data-idx="${idx}">View Product</button>
+          <button class="btn-sm-danger wl-remove" data-id="${id}">Remove</button>
+        </div>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+  grid.querySelectorAll('.wl-add-cart').forEach(btn=>btn.addEventListener('click',()=>{
+    addToCart(btn.dataset.id);
+    btn.textContent='✓ Added';btn.style.background='rgba(140,200,140,.9)';btn.style.color='#080810';
+    setTimeout(()=>{btn.textContent='Add to Cart';btn.style.background='';btn.style.color='';},1800);
+  }));
+  grid.querySelectorAll('.wl-view').forEach(btn=>btn.addEventListener('click',()=>{
+    const L2=LISTINGS.find(l=>l.id===btn.dataset.id);
+    if(L2){closeOverlay('wishlist-page');openProductModal(L2,parseInt(btn.dataset.idx));}
+  }));
+  grid.querySelectorAll('.wl-remove').forEach(btn=>btn.addEventListener('click',()=>{
+    toggleWishlist(btn.dataset.id);
+  }));
+}
+
+document.getElementById('nav-wish').addEventListener('click',()=>{
+  updateWishlistPage();openOverlay('wishlist-page');
+});
+document.getElementById('wl-back').addEventListener('click',()=>closeOverlay('wishlist-page'));
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  CART PAGE
+// ─────────────────────────────────────────────────────────────────────────────
+function updateCartPage(){
+  const list=document.getElementById('cart-items-list');
+  const empty=document.getElementById('cart-empty');
+  const summary=document.getElementById('cart-summary-rows');
+  const checkout=document.getElementById('cs-checkout');
+  const cartCount=document.getElementById('cart-item-count');
+
+  list.innerHTML='';summary.innerHTML='';
+
+  const total=cart.reduce((s,e)=>s+e.qty,0);
+  cartCount.textContent=`${total} item${total!==1?'s':''}`;
+
+  if(cart.length===0){
+    list.style.display='none';empty.style.display='flex';
+    summary.innerHTML=`<div class="cs-empty-note">Add items to see your summary</div>`;
+    checkout.disabled=true;return;
+  }
+  list.style.display='block';empty.style.display='none';
+  checkout.disabled=false;
+
+  cart.forEach(entry=>{
+    const idx=LISTINGS.findIndex(l=>l.id===entry.id);
+    if(idx<0)return;
+    const L=LISTINGS[idx];const cc=CAT[L.category]||{hex:'#f0ece0'};
+    const item=document.createElement('div');item.className='cart-item';
+    item.innerHTML=`
+      <img class="ci-img" src="${unsplashUrl(PHOTO_IDS[idx],180,220)}" crossorigin="anonymous" alt="${L.title}" loading="lazy"/>
+      <div class="ci-info">
+        <div class="ci-cat" style="color:${cc.hex}">${L.category}</div>
+        <div class="ci-title">${L.title}</div>
+        <div class="ci-meta">${L.size}  ·  ${L.condition}  ·  ${L.platform}</div>
+        <div class="ci-bottom">
+          <div class="ci-price">$${(L.price*entry.qty).toFixed(2)}</div>
+          <div style="display:flex;align-items:center;gap:.8rem">
+            <div class="ci-qty">
+              <button data-id="${L.id}" data-delta="-1">−</button>
+              <span>${entry.qty}</span>
+              <button data-id="${L.id}" data-delta="1">+</button>
+            </div>
+            <button class="ci-remove" data-id="${L.id}">Remove</button>
+          </div>
+        </div>
+      </div>
+    `;
+    list.appendChild(item);
+  });
+
+  // qty buttons
+  list.querySelectorAll('.ci-qty button').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const e=cart.find(x=>x.id===btn.dataset.id);
+      if(e)setCartQty(btn.dataset.id,e.qty+parseInt(btn.dataset.delta));
+    });
+  });
+  list.querySelectorAll('.ci-remove').forEach(btn=>{
+    btn.addEventListener('click',()=>removeFromCart(btn.dataset.id));
+  });
+
+  // summary
+  const subtotal=cartTotal();
+  let rows='';
+  cart.forEach(entry=>{
+    const L=LISTINGS.find(l=>l.id===entry.id);
+    if(L)rows+=`<div class="cs-row"><span>${L.title.split('—')[0].trim()}</span><span>$${(L.price*entry.qty).toFixed(2)}</span></div>`;
+  });
+  summary.innerHTML=`
+    ${rows}
+    <div class="cs-row total"><span>Total</span><span>$${subtotal.toFixed(2)}</span></div>
+  `;
+}
+
+document.getElementById('nav-cart').addEventListener('click',()=>{
+  updateCartPage();openOverlay('cart-page');
+});
+document.getElementById('cart-back').addEventListener('click',()=>closeOverlay('cart-page'));
+
+// Checkout → Thank You
+document.getElementById('cs-checkout').addEventListener('click',()=>{
+  showThankYou();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  THANK YOU PAGE
+// ─────────────────────────────────────────────────────────────────────────────
+function showThankYou(){
+  const orderNum='FF-'+Math.random().toString(36).slice(2,8).toUpperCase();
+  document.getElementById('ty-order-num').textContent=`Order #${orderNum}`;
+
+  // Items list
+  const itemsEl=document.getElementById('ty-items');
+  itemsEl.innerHTML='';
+  cart.forEach(entry=>{
+    const L=LISTINGS.find(l=>l.id===entry.id);
+    if(!L)return;
+    const row=document.createElement('div');row.className='ty-item';
+    row.innerHTML=`<span>${L.title.split('—')[0].trim()}${entry.qty>1?` ×${entry.qty}`:''}</span><span>$${(L.price*entry.qty).toFixed(2)}</span>`;
+    itemsEl.appendChild(row);
+  });
+
+  document.getElementById('ty-total').innerHTML=`<span>Total Paid</span><span>$${cartTotal().toFixed(2)}</span>`;
+
+  // reset check animation
+  const check=document.getElementById('ty-check');
+  check.style.animation='none';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{ check.style.animation=''; }));
+
+  // close cart, open ty
+  closeOverlay('cart-page');
+  openOverlay('thankyou-page');
+
+  // clear cart
+  cart=[];saveState();updateBadges();
+}
+
+document.getElementById('ty-cta').addEventListener('click',()=>{
+  closeOverlay('thankyou-page');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  FILTER + SEARCH
+// ─────────────────────────────────────────────────────────────────────────────
+let activeF='all',activeS='';
+document.querySelectorAll('.fbtn').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');activeF=b.dataset.f;applyFilters();
+}));
+document.getElementById('srch').addEventListener('input',e=>{activeS=e.target.value.toLowerCase();applyFilters();});
+function applyFilters(){
+  const vis=[];
+  cards.forEach(card=>{
+    const L=card.userData.L;
+    const mc=activeF==='all'||L.category===activeF;
+    const terms=activeS.split(' ').filter(Boolean);
+    const ms=terms.every(t=>(
+      L.title.toLowerCase().includes(t)||L.description.toLowerCase().includes(t)||
+      (L.style_tags||[]).some(s=>s.toLowerCase().includes(t))||
+      (L.colors||[]).some(c=>c.toLowerCase().includes(t))||
+      L.size.toLowerCase().includes(t)||(L.brand||'').toLowerCase().includes(t)||
+      String(L.price).includes(t.replace('$',''))||L.platform.toLowerCase().includes(t)
+    ));
+    card.visible=mc&&ms;if(card.visible)vis.push(card);
+  });
+  document.getElementById('count').textContent=`${vis.length} piece${vis.length!==1?'s':''}`;
+  vis.forEach((card,i)=>{const p=helixPos(i,vis.length);card.userData.targetPos=new THREE.Vector3(p.x,p.y,p.z);});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ANIMATION LOOP
+// ─────────────────────────────────────────────────────────────────────────────
+const lerp=(a,b,t)=>a+(b-a)*t;let T=0;
+
+function animate(){
+  requestAnimationFrame(animate);T+=.007;
+
+  // ── velocity ──
+  velX=curX-prevCurX; velY=curY-prevCurY;
+  speed=Math.sqrt(velX*velX+velY*velY);
+  prevCurX=curX; prevCurY=curY;
+
+  // ── ring2 (inner) — moderate lag ──
+  r2x=lerp(r2x,curX,.18); r2y=lerp(r2y,curY,.18);
+  ring2El.style.left=r2x+'px'; ring2El.style.top=r2y+'px';
+
+  // ── ring1 (outer) — heavy lag + velocity squash/stretch ──
+  r1x=lerp(r1x,curX,.08); r1y=lerp(r1y,curY,.08);
+  const angle=Math.atan2(velY,velX);
+  const stretch=Math.min(1+speed*.03, 2.2);   // elongate along motion direction
+  const squash =Math.max(1/stretch, 0.45);     // pinch perpendicular
+  const hov=dotEl.classList.contains('hover');
+  const baseS=hov?1.6:1;
+  ring1El.style.left=r1x+'px'; ring1El.style.top=r1y+'px';
+  ring1El.style.transform=`translate(-50%,-50%) rotate(${angle}rad) scale(${baseS*stretch},${baseS*squash})`;
+
+  // ── trail — push new point, draw fading dots ──
+  trail.unshift({x:curX,y:curY,age:0});
+  if(trail.length>TRAIL_LEN) trail.length=TRAIL_LEN;
+  trail.forEach(p=>{ p.age=Math.min(p.age+0.06,1); });
+
+  trailCtx.clearRect(0,0,trailCvs.width,trailCvs.height);
+  for(let i=trail.length-1;i>=0;i--){
+    const p=trail[i];
+    const frac=1-(i/TRAIL_LEN);          // 0=oldest 1=newest
+    const alpha=(1-p.age)*frac*0.55;
+    if(alpha<.005) continue;
+    const radius=lerp(0.5,3,frac*(1-p.age));
+    trailCtx.beginPath();
+    trailCtx.arc(p.x,p.y,radius,0,Math.PI*2);
+    // color tints toward accent on hover
+    const isHov=dotEl.classList.contains('hover');
+    trailCtx.fillStyle=isHov
+      ? `rgba(232,165,152,${alpha})`
+      : `rgba(240,236,224,${alpha})`;
+    trailCtx.fill();
+  }
+  if(sceneActive){
+    camCX=lerp(camCX,camTX,.038);camCY=lerp(camCY,camTY,.038);
+    camera.position.set(camCX,camCY,14);camera.lookAt(camCX*.12,camCY*.12,0);
+    cardGroup.rotation.y=lerp(cardGroup.rotation.y,targetRotY,.052);
+  }
+  const pa=pG.attributes.position.array;
+  for(let i=0;i<PC;i++){
+    pa[i*3]  +=pV[i*3]  *Math.sin(T*.3+i*.1);
+    pa[i*3+1]+=pV[i*3+1]*Math.cos(T*.25+i*.07);
+    pa[i*3+2]+=pV[i*3+2]*Math.sin(T*.2+i*.13);
+    if(Math.abs(pa[i*3])>32)   pa[i*3]  *=-.98;
+    if(Math.abs(pa[i*3+1])>22) pa[i*3+1]*=-.98;
+    if(Math.abs(pa[i*3+2])>32) pa[i*3+2]*=-.98;
+  }
+  pG.attributes.position.needsUpdate=true;dust.rotation.y=T*.015;
+
+  if(sceneActive){
+    mv.set(mxn,myn);rc.setFromCamera(mv,camera);
+    const hits=rc.intersectObjects(allPickMeshes());
+    const newHov=hits.length?parentCard(hits[0].object):null;
+    if(newHov!==hoveredCard){
+      hoveredCard=newHov;
+      if(hoveredCard){
+        dotEl.classList.add('hover');ring1El.classList.add('hover');ring2El.classList.add('hover');
+        const L=hoveredCard.userData.L;
+        htagEl.innerHTML=`${L.title}<span class="hp">$${L.price}</span>`;
+        htagEl.style.opacity='1';
+      } else {
+        dotEl.classList.remove('hover');ring1El.classList.remove('hover');ring2El.classList.remove('hover');
+        htagEl.style.opacity='0';
+      }
+    }
+    if(hoveredCard){htagEl.style.left=curX+'px';htagEl.style.top=curY+'px';}
+    cards.forEach((card,i)=>{
+      if(!card.visible)return;
+      card.position.y=card.userData.origPos.y+Math.sin(T+i*.35)*.065;
+      if(card.userData.targetPos){
+        card.userData.origPos.lerp(card.userData.targetPos,.07);
+        if(card.userData.origPos.distanceTo(card.userData.targetPos)<.02){card.userData.origPos.copy(card.userData.targetPos);card.userData.targetPos=null;}
+      }
+      card.position.x=card.userData.origPos.x;card.position.z=card.userData.origPos.z;
+      card.lookAt(new THREE.Vector3(0,card.position.y,0));
+      card.rotation.z=Math.sin(T*.38+i*.82)*.01;
+      const isHov=card===hoveredCard;
+      card.userData.glowMat.opacity=lerp(card.userData.glowMat.opacity,isHov?.45:.07,.1);
+      const sc=isHov?1.055:1;card.scale.x=lerp(card.scale.x,sc,.08);card.scale.y=lerp(card.scale.y,sc,.08);
+    });
+  }
+  renderer.render(scene,camera);
+}
+
+window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  LOADER
+// ─────────────────────────────────────────────────────────────────────────────
+setTimeout(()=>{document.getElementById('lbar-fill').style.width='100%';},60);
+setTimeout(()=>{const lo=document.getElementById('loader');lo.style.opacity='0';setTimeout(()=>{lo.style.display='none';},1300);},3400);
+setTimeout(()=>{document.getElementById('hint').style.opacity='0';},9000);
+
+// Init
+updateBadges();
+animate();
+</script>
+</body>
+</html>
