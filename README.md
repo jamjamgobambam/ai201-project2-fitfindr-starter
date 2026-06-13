@@ -1,4 +1,6 @@
-# FitFindr — Starter Kit
+# FitFindr
+
+FitFindr is a multi tool AI agent for thrifting. u type what ur after in plain english (like "vintage graphic tee under $30") n it runs 3 tools in order: `search_listings` digs thru the mock secondhand listings n ranks the matches, `suggest_outfit` takes the top find + ur existing wardrobe n builds actual outfits, n `create_fit_card` writes a short shareable OOTD caption for it. the whole point isnt the search, its the agent part: a planning loop that decides which tool to call based on what came back, passes state between the tools so u never re enter anything, n fails gracefully when a tool comes back w nothing (eg an impossible query stops after the search n tells u what to change instead of crashing or styling an item that doesnt exist).
 
 This starter kit contains everything you need to begin Project 2.
 
