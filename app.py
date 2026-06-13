@@ -25,26 +25,57 @@ def handle_query(user_query: str, wardrobe_choice: str) -> tuple[str, str, str]:
     Called by Gradio when the user submits a query.
 
     Args:
-        user_query:     The text the user typed into the search box.
+        user_query:      The text the user typed into the search box.
         wardrobe_choice: Either "Example wardrobe" or "Empty wardrobe (new user)".
 
     Returns:
         A tuple of three strings:
             (listing_text, outfit_suggestion, fit_card)
         Each string maps to one of the three output panels in the UI.
-
-    TODO:
-        1. Guard against an empty query (return early with an error message).
-        2. Select the wardrobe based on wardrobe_choice.
-        3. Call run_agent() with the query and selected wardrobe.
-        4. If session["error"] is set, return the error in the first panel
-           and empty strings for the other two.
-        5. Otherwise, format session["selected_item"] into a readable listing_text
-           string and return it along with session["outfit_suggestion"] and
-           session["fit_card"].
     """
-    # TODO: implement this function
-    return "Agent not yet implemented.", "", ""
+    # 1. Guard against empty query
+    if not user_query or not user_query.strip():
+        return "Please enter a search query (e.g. 'vintage graphic tee under $30, size M').", "", ""
+
+    # 2. Select wardrobe
+    wardrobe = (
+        get_example_wardrobe()
+        if wardrobe_choice == "Example wardrobe"
+        else get_empty_wardrobe()
+    )
+
+    # 3. Run the agent
+    session = run_agent(query=user_query.strip(), wardrobe=wardrobe)
+
+    # 4. Early-exit error path (e.g. no listings matched)
+    if session["error"]:
+        return session["error"], "", ""
+
+    # 5. Format the top listing into readable text
+    item = session["selected_item"]
+    tags = ", ".join(item.get("style_tags", [])) or "—"
+    colors = ", ".join(item.get("colors", [])) or "—"
+    brand = item.get("brand") or "—"
+    listing_text = (
+        f"{item['title']}\n"
+        f"{'─' * 40}\n"
+        f"Price:      ${item['price']}\n"
+        f"Platform:   {item['platform']}\n"
+        f"Category:   {item['category']}\n"
+        f"Size:       {item['size']}\n"
+        f"Condition:  {item['condition']}\n"
+        f"Brand:      {brand}\n"
+        f"Colors:     {colors}\n"
+        f"Tags:       {tags}\n"
+        f"{'─' * 40}\n"
+        f"{item['description']}"
+    )
+
+    return (
+        listing_text,
+        session["outfit_suggestion"] or "",
+        session["fit_card"] or "",
+    )
 
 
 # ── interface ─────────────────────────────────────────────────────────────────
