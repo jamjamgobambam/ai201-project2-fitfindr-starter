@@ -15,6 +15,18 @@ ai201-project2-fitfindr-starter/
 └── requirements.txt           # Python dependencies
 ```
 
+
+## Fork the FitFindr starter repo, then clone your fork locally.
+
+Create and activate a virtual environment from inside your cloned repo:
+```bash
+python -m venv .venv
+source .venv/bin/activate          # Mac/Linux
+source .venv/Scripts/activate      # Windows (Git Bash)
+# or: .venv\Scripts\activate       # Windows (Command Prompt)
+```
+You should see (.venv) in your terminal prompt.
+
 ## Setup
 
 ```bash
