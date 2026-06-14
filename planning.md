@@ -136,14 +136,17 @@ Write out what a full user interaction looks like from start to finish — tool 
 
 **Example user query:** "I'm looking for a vintage graphic tee under $30. I mostly wear baggy jeans and chunky sneakers. What's out there and how would I style it?"
 
-**Step 1:**
-<!-- What does the agent do first? Which tool is called? With what input? -->
+**Step 1: Search listings**
+The shopping part of the query triggers `search_listings(description="vintage graphic tee", size=None, max_price=30.0)`. The tool searches `listings.json` and returns the top 3 relevant listings under $30, such as `Vintage Band Tee — Faded Grey`, which is $19 on Depop in fair condition.
 
-**Step 2:**
-<!-- What happens next? What was returned from step 1? What tool is called now? -->
+**Step 2: Suggest outfit**
+The styling part of the query triggers `suggest_outfit(new_item=<top listing>, wardrobe=<user's wardrobe>)`. The tool uses the selected tee plus the user's wardrobe details, like baggy jeans and chunky sneakers, and returns an outfit suggestion such as: "Pair this with your baggy jeans and chunky sneakers for a vintage streetwear look. Add a black denim jacket if you want more structure."
 
-**Step 3:**
-<!-- Continue until the full interaction is complete -->
+**Step 3: Respond to user**
+Because the user asked what is available and how to style it, FitFindr does not call `create_fit_card` yet. Instead, it combines the listing results from `search_listings` and the outfit recommendation from `suggest_outfit` into one clear response.
 
 **Final output to user:**
-<!-- What does the user actually see at the end? -->
+The user sees the top 3 matching listings, the best listing highlighted, and an outfit suggestion using their wardrobe. For example: "I found a vintage band tee on Depop for $19 that fits your vintage streetwear vibe. I would style it with your baggy jeans, chunky sneakers, and a black denim jacket for an easy grunge-inspired look."
+
+**Error path:**
+If `search_listings` returns nothing, FitFindr tells the user what to try differently and stops instead of calling `suggest_outfit` with empty input. If `suggest_outfit` fails because the wardrobe is empty or incomplete, FitFindr still shows the listings and asks the user for more wardrobe details.
