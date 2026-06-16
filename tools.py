@@ -18,6 +18,8 @@ from dotenv import load_dotenv
 from groq import Groq
 
 from utils.data_loader import load_listings
+from functools import lru_cache
+import re
 
 load_dotenv()
 
@@ -33,6 +35,167 @@ def _get_groq_client():
         )
     return Groq(api_key=api_key)
 
+def _tokenize(text: str) -> set[str]:
+    """
+    Convert text into lowercase searchable words.
+
+    Example:
+        "Vintage Graphic Tee!" -> {"vintage", "graphic", "tee"}
+    """
+    return set(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def _build_searchable_text(listing: dict) -> str:
+    """
+    Combine the listing fields that should be searchable.
+
+    We search more than just the title so users can match style tags,
+    colors, category, brand, and description.
+    """
+    parts = [
+        str(listing.get("title", "")),
+        str(listing.get("description", "")),
+        str(listing.get("category", "")),
+        str(listing.get("size", "")),
+        str(listing.get("condition", "")),
+        str(listing.get("brand") or ""),
+        " ".join(listing.get("style_tags", [])),
+        " ".join(listing.get("colors", [])),
+    ]
+
+    return " ".join(parts)
+
+
+@lru_cache(maxsize=1)
+def _get_listings() -> tuple[dict, ...]:
+    """
+    Load listings once and reuse them across calls.
+
+    This avoids repeatedly reading listings.json every time the user searches.
+    Returning a tuple also discourages accidental modification of the cached data.
+    """
+    return tuple(load_listings())
+
+
+def _tokenize(text: str) -> set[str]:
+    """
+    Convert text into lowercase searchable words.
+    """
+    return set(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def _build_searchable_text(listing: dict) -> str:
+    """
+    Combine fields that should be searched.
+    """
+    parts = [
+        str(listing.get("title", "")),
+        str(listing.get("description", "")),
+        str(listing.get("category", "")),
+        str(listing.get("size", "")),
+        str(listing.get("condition", "")),
+        str(listing.get("brand") or ""),
+        " ".join(listing.get("style_tags", [])),
+        " ".join(listing.get("colors", [])),
+    ]
+
+    return " ".join(parts).lower()
+
+
+def _score_listing(query_terms: set[str], listing: dict) -> int:
+    """
+    Score a listing based on keyword overlap.
+
+    Stronger matches in title and style tags get extra weight.
+    """
+    searchable_text = _build_searchable_text(listing)
+    listing_terms = _tokenize(searchable_text)
+
+    title_terms = _tokenize(str(listing.get("title", "")))
+    style_terms = _tokenize(" ".join(listing.get("style_tags", [])))
+    description_terms = _tokenize(str(listing.get("description", "")))
+    category_terms = _tokenize(str(listing.get("category", "")))
+    color_terms = _tokenize(" ".join(listing.get("colors", [])))
+
+    score = 0
+
+    # General overlap
+    score += len(query_terms.intersection(listing_terms))
+
+    # Stronger fields
+    score += 3 * len(query_terms.intersection(title_terms))
+    score += 3 * len(query_terms.intersection(style_terms))
+    score += 2 * len(query_terms.intersection(description_terms))
+    score += len(query_terms.intersection(category_terms))
+    score += len(query_terms.intersection(color_terms))
+
+    return score
+
+def _matches_required_item_type(description: str, listing: dict) -> bool:
+    """
+    Prevent items from matching only because the description casually mentions
+    the requested item type.
+
+    Example:
+    If the user asks for a "graphic tee", a mesh top should not match just
+    because its description says it can be layered under a graphic tee.
+    """
+    query = description.lower()
+
+    title_and_tags = " ".join(
+        [
+            str(listing.get("title", "")),
+            str(listing.get("category", "")),
+            " ".join(listing.get("style_tags", [])),
+        ]
+    ).lower()
+
+    required_terms = ["tee", "hoodie", "jacket", "boots", "sneakers", "jeans", "pants", "skirt", "dress", "belt", "hat"]
+
+    for term in required_terms:
+        if term in query and term not in title_and_tags:
+            return False
+
+    return True
+
+def _is_relevant_match(description: str, query_terms: set[str], listing: dict, score: int) -> bool:
+    """
+    Decide whether a scored listing is relevant enough to return.
+
+    This prevents weak matches like returning a belt just because it has the word
+    'vintage' when the user asked for 'vintage graphic tee'.
+    """
+    searchable_text = _build_searchable_text(listing)
+    matched_terms = query_terms.intersection(_tokenize(searchable_text))
+
+    # If the full phrase appears, it is definitely relevant.
+    if description.strip().lower() in searchable_text:
+        return True
+
+    # Important phrase support for common fashion terms.
+    important_phrases = [
+        "graphic tee",
+        "band tee",
+        "track jacket",
+        "combat boots",
+        "midi skirt",
+        "baby tee",
+        "denim jacket",
+        "leather jacket",
+        "cargo pants",
+    ]
+
+    for phrase in important_phrases:
+        if phrase in description.lower() and phrase in searchable_text:
+            return True
+
+    # Require at least 2 matched query terms for multi-word searches.
+    if len(query_terms) >= 2 and len(matched_terms) < 2:
+        return False
+
+    # Require a meaningful score.
+    return score > 0
+
 
 # ── Tool 1: search_listings ───────────────────────────────────────────────────
 
@@ -45,32 +208,41 @@ def search_listings(
     Search the mock listings dataset for items matching the description,
     optional size, and optional price ceiling.
 
-    Args:
-        description: Keywords describing what the user is looking for
-                     (e.g., "vintage graphic tee").
-        size:        Size string to filter by, or None to skip size filtering.
-                     Matching is case-insensitive (e.g., "M" matches "S/M").
-        max_price:   Maximum price (inclusive), or None to skip price filtering.
-
-    Returns:
-        A list of matching listing dicts, sorted by relevance (best match first).
-        Returns an empty list if nothing matches — does NOT raise an exception.
-
-    Each listing dict has the following fields:
-        id, title, description, category, style_tags (list), size,
-        condition, price (float), colors (list), brand, platform
-
-    TODO:
-        1. Load all listings with load_listings().
-        2. Filter by max_price and size (if provided).
-        3. Score each remaining listing by keyword overlap with `description`.
-        4. Drop any listings with a score of 0 (no relevant matches).
-        5. Sort by score, highest first, and return the listing dicts.
-
-    Before writing code, fill in the Tool 1 section of planning.md.
+    Returns matching listing dictionaries sorted by relevance.
+    Returns [] when nothing matches.
     """
-    # Replace this with your implementation
-    return []
+    if not description or not description.strip():
+        return []
+
+    query_terms = _tokenize(description)
+
+    if not query_terms:
+        return []
+
+    normalized_size = size.strip().lower() if size else None
+    scored_results: list[tuple[int, float, dict]] = []
+
+    for listing in _get_listings():
+        price = float(listing.get("price", 0))
+
+        if max_price is not None and price > max_price:
+            continue
+
+        listing_size = str(listing.get("size", "")).lower()
+
+        if normalized_size and normalized_size not in listing_size:
+            continue
+
+        score = _score_listing(query_terms, listing)
+
+        if (_is_relevant_match(description, query_terms, listing, score) and _matches_required_item_type(description, listing)):
+            scored_results.append((score, price, dict(listing)))
+
+
+
+    scored_results.sort(key=lambda item: (-item[0], item[1]))
+
+    return [listing for _, _, listing in scored_results]
 
 
 # ── Tool 2: suggest_outfit ────────────────────────────────────────────────────
