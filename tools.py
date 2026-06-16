@@ -25,7 +25,7 @@ load_dotenv()
 
 
 # ── Groq client ───────────────────────────────────────────────────────────────
-
+@lru_cache(maxsize=1)
 def _get_groq_client():
     """Initialize and return a Groq client using GROQ_API_KEY from .env."""
     api_key = os.environ.get("GROQ_API_KEY")
@@ -247,6 +247,76 @@ def search_listings(
 
 # ── Tool 2: suggest_outfit ────────────────────────────────────────────────────
 
+def _format_new_item(new_item: dict) -> str:
+    """
+    Format the selected thrift listing into a short text block for the LLM.
+    """
+    return (
+        f"Title: {new_item.get('title', 'Unknown item')}\n"
+        f"Category: {new_item.get('category', 'unknown')}\n"
+        f"Style tags: {', '.join(new_item.get('style_tags', []))}\n"
+        f"Colors: {', '.join(new_item.get('colors', []))}\n"
+        f"Size: {new_item.get('size', 'unknown')}\n"
+        f"Condition: {new_item.get('condition', 'unknown')}\n"
+        f"Price: ${float(new_item.get('price', 0)):.2f}\n"
+        f"Platform: {new_item.get('platform', 'unknown')}\n"
+        f"Description: {new_item.get('description', '')}"
+    )
+
+
+def _format_wardrobe_items(wardrobe_items: list[dict]) -> str:
+    """
+    Format wardrobe items into readable text for the LLM.
+    """
+    formatted_items = []
+
+    for item in wardrobe_items:
+        notes = item.get("notes") or "No extra notes"
+
+        formatted_items.append(
+            "- "
+            f"{item.get('name', 'Unnamed item')} "
+            f"({item.get('category', 'unknown category')}; "
+            f"colors: {', '.join(item.get('colors', []))}; "
+            f"style tags: {', '.join(item.get('style_tags', []))}; "
+            f"notes: {notes})"
+        )
+
+    return "\n".join(formatted_items)
+
+
+def _call_llm(prompt: str, temperature: float = 0.7) -> str:
+    """
+    Call Groq LLM with a reusable client.
+
+    Keeping this in one helper avoids repeating the same Groq API code
+    in suggest_outfit() and create_fit_card().
+    """
+    client = _get_groq_client()
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are FitFindr, a helpful secondhand fashion styling assistant. "
+                    "Give practical, specific, concise outfit advice. "
+                    "Avoid sounding like a generic product ad."
+                ),
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+        temperature=temperature,
+        max_tokens=350,
+    )
+
+    return response.choices[0].message.content.strip()
+
+
 def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
     """
     Given a thrifted item and the user's wardrobe, suggest 1–2 complete outfits.
@@ -260,21 +330,127 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
         A non-empty string with outfit suggestions.
         If the wardrobe is empty, offer general styling advice for the item
         rather than raising an exception or returning an empty string.
-
-    TODO:
-        1. Check whether wardrobe['items'] is empty.
-        2. If empty: call the LLM with a prompt for general styling ideas
-           (what kinds of items pair well, what vibe it suits, etc.).
-        3. If not empty: format the wardrobe items into a prompt and ask
-           the LLM to suggest specific outfit combinations using the new item
-           and named pieces from the wardrobe.
-        4. Return the LLM's response as a string.
-
-    Before writing code, fill in the Tool 2 section of planning.md.
     """
-    # Replace this with your implementation
-    return ""
+    if not new_item:
+        return (
+            "I couldn't suggest an outfit because the selected listing is missing. "
+            "Please search for an item first."
+        )
 
+    wardrobe_items = wardrobe.get("items", []) if isinstance(wardrobe, dict) else []
+    item_text = _format_new_item(new_item)
+
+    if not wardrobe_items:
+        prompt = f"""
+A user is considering buying this thrifted item:
+
+{item_text}
+
+The user has not added any wardrobe items yet.
+
+Suggest 1–2 complete outfit ideas using general pieces that would pair well with this item.
+Include:
+- bottoms
+- shoes
+- optional outerwear or accessories
+- the overall style vibe
+
+Keep the answer practical, friendly, and concise.
+Do not mention that you are an AI.
+"""
+    else:
+        wardrobe_text = _format_wardrobe_items(wardrobe_items)
+
+        prompt = f"""
+A user is considering buying this thrifted item:
+
+{item_text}
+
+Here is the user's current wardrobe:
+
+{wardrobe_text}
+
+Suggest 1–2 complete outfits using the thrifted item and specific named pieces from the user's wardrobe.
+Use the exact wardrobe item names when possible.
+
+For each outfit, include:
+- the thrifted item
+- bottom or base piece
+- shoes
+- optional outerwear or accessory
+- the overall style vibe
+
+Keep the answer practical, friendly, and concise.
+Do not mention that you are an AI.
+"""
+
+    try:
+        result = _call_llm(prompt, temperature=0.7)
+
+        if result:
+            return result
+
+        return _fallback_outfit_suggestion(new_item, wardrobe_items)
+
+    except Exception as exc:
+        return (
+            "I couldn't generate a full LLM outfit suggestion right now, "
+            f"but here's a simple styling idea: {_fallback_outfit_suggestion(new_item, wardrobe_items)}"
+        )
+
+def _fallback_outfit_suggestion(new_item: dict, wardrobe_items: list[dict]) -> str:
+    """
+    Rule-based backup if the LLM call fails or returns nothing.
+    """
+    item_name = new_item.get("title", "this thrifted item")
+    item_tags = new_item.get("style_tags", [])
+    vibe = ", ".join(item_tags[:3]) if item_tags else "casual thrifted"
+
+    if wardrobe_items:
+        bottoms = [
+            item for item in wardrobe_items
+            if item.get("category") == "bottoms"
+        ]
+        shoes = [
+            item for item in wardrobe_items
+            if item.get("category") == "shoes"
+        ]
+        accessories = [
+            item for item in wardrobe_items
+            if item.get("category") == "accessories"
+        ]
+        outerwear = [
+            item for item in wardrobe_items
+            if item.get("category") == "outerwear"
+        ]
+
+        outfit_parts = [item_name]
+
+        if bottoms:
+            outfit_parts.append(bottoms[0].get("name", "a simple bottom"))
+        else:
+            outfit_parts.append("a simple pair of jeans or trousers")
+
+        if shoes:
+            outfit_parts.append(shoes[0].get("name", "comfortable shoes"))
+        else:
+            outfit_parts.append("clean sneakers or boots")
+
+        if outerwear:
+            outfit_parts.append(outerwear[0].get("name", "a light jacket"))
+
+        if accessories:
+            outfit_parts.append(accessories[0].get("name", "a simple accessory"))
+
+        return (
+            f"Style {', '.join(outfit_parts)} together for a {vibe} look. "
+            "Keep the colors balanced and let the thrifted item be the main focus."
+        )
+
+    return (
+        f"Style {item_name} with relaxed denim or neutral trousers, clean sneakers or boots, "
+        f"and a simple accessory for a {vibe} look."
+    )
 
 # ── Tool 3: create_fit_card ───────────────────────────────────────────────────
 
