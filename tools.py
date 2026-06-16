@@ -466,20 +466,69 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
         A 2–4 sentence string usable as an Instagram/TikTok caption.
         If outfit is empty or missing, return a descriptive error message
         string — do NOT raise an exception.
-
-    The caption should:
-    - Feel casual and authentic (like a real OOTD post, not a product description)
-    - Mention the item name, price, and platform naturally (once each)
-    - Capture the outfit vibe in specific terms
-    - Sound different each time for different inputs (use higher LLM temperature)
-
-    TODO:
-        1. Guard against an empty or whitespace-only outfit string.
-        2. Build a prompt that gives the LLM the item details and the outfit,
-           and asks for a caption matching the style guidelines above.
-        3. Call the LLM and return the response.
-
-    Before writing code, fill in the Tool 3 section of planning.md.
     """
-    # Replace this with your implementation
-    return ""
+    if not outfit or not outfit.strip():
+        return "I couldn't create a fit card because the outfit suggestion was missing."
+
+    if not new_item:
+        return "I couldn't create a fit card because the selected listing was missing."
+
+    item_title = new_item.get("title", "this thrifted find")
+    item_price = float(new_item.get("price", 0))
+    item_platform = new_item.get("platform", "the thrift platform")
+    item_condition = new_item.get("condition", "unknown condition")
+    item_colors = ", ".join(new_item.get("colors", [])) or "unknown colors"
+    item_tags = ", ".join(new_item.get("style_tags", [])) or "thrifted style"
+
+    prompt = f"""
+Create a short, shareable outfit caption for Instagram or TikTok.
+
+Thrifted item:
+- Name: {item_title}
+- Price: ${item_price:.2f}
+- Platform: {item_platform}
+- Condition: {item_condition}
+- Colors: {item_colors}
+- Style tags: {item_tags}
+
+Outfit suggestion:
+{outfit}
+
+Caption requirements:
+- Write 2 to 4 sentences.
+- Sound casual, authentic, and like a real OOTD post.
+- Mention the item name naturally once.
+- Mention the price naturally once.
+- Mention the platform naturally once.
+- Capture the outfit vibe in specific terms.
+- Do not sound like a product description.
+- Do not use hashtags unless they feel natural.
+- Do not mention that you are an AI.
+"""
+
+    try:
+        result = _call_llm(prompt, temperature=0.9)
+
+        if result:
+            return result
+
+        return _fallback_fit_card(outfit, new_item)
+
+    except Exception:
+        return _fallback_fit_card(outfit, new_item)
+    
+def _fallback_fit_card(outfit: str, new_item: dict) -> str:
+    """
+    Rule-based backup caption if the LLM call fails.
+    """
+    item_title = new_item.get("title", "this thrifted find")
+    item_price = float(new_item.get("price", 0))
+    item_platform = new_item.get("platform", "the thrift platform")
+    item_tags = new_item.get("style_tags", [])
+
+    vibe = ", ".join(item_tags[:3]) if item_tags else "easy thrifted"
+
+    return (
+        f"Found {item_title} on {item_platform} for ${item_price:.2f}, and it fits right into a {vibe} vibe. "
+        f"Styled with pieces from the outfit idea, it gives an easy, wearable look without feeling overdone."
+    )   
