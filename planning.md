@@ -1,149 +1,75 @@
-# FitFindr — planning.md
+# FitFindr 🛍️
 
-> Complete this document before writing any implementation code.
-> Your spec and agent diagram are what you'll use to direct AI tools (Claude, Copilot, etc.) to generate your implementation — the more specific they are, the more useful the generated code will be.
-> Your planning.md will be reviewed as part of your submission.
-> Update it before starting any stretch features.
+**Author:** Elaheh Baharlouei
 
----
+FitFindr is a multi-tool AI agent designed to help users find secondhand clothing and seamlessly style those pieces with their existing digital wardrobe. The agent orchestrates a custom planning loop, connecting a local search algorithm with Groq-powered LLMs to deliver personalized fashion advice and shareable social media captions through a Gradio interface.
 
-## Tools
+## 🚀 Setup & Installation
 
-List every tool your agent will use. For each tool, fill in all four fields.
-You must have at least 3 tools. The three required tools are listed — add any additional tools below them.
+1. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. **Environment Variables:**
+   Set your Groq API key in a `.env` file in the root directory:
+   ```env
+   GROQ_API_KEY=your_key_here
+   ```
+3. **Run the Application:**
+   ```bash
+   python app.py
+   ```
 
-### Tool 1: search_listings
+## 🏗️ Architecture
 
-**What it does:**
-<!-- Describe what this tool does in 1–2 sentences -->
+FitFindr operates using a conditional planning loop rather than a rigid, sequential chain. The diagram below illustrates how the agent branches its logic based on the success or failure of the initial search tool.
 
-**Input parameters:**
-<!-- List each parameter, its type, and what it represents -->
-- `description` (str): ...
-- `size` (str): ...
-- `max_price` (float): ...
+```mermaid
+flowchart TD
+    A[User Query & Wardrobe] --> B[Initialize Session & Parse Query]
+    B --> C[search_listings]
+    
+    C -- "results = []" --> D[Set session['error'] & Return early]
+    C -- "results = [item, ...]" --> E[Session: selected_item = results 0]
+    
+    E --> F[suggest_outfit]
+    F --> G[Session: outfit_suggestion = output]
+    
+    G --> H[create_fit_card]
+    H --> I[Session: fit_card = output]
+    
+    I --> J[Return completed session]
+    D --> J
+```
 
-**What it returns:**
-<!-- Describe the return value — what fields does a result contain? -->
+## 🧠 State Management
 
-**What happens if it fails or returns nothing:**
-<!-- What should the agent do if no listings match? -->
+State is tracked entirely within a single `session` dictionary that is initialized at the start of the interaction. 
+1. **Parsing:** The agent extracts explicit constraints like maximum price and size.
+2. **Conditional Branching:** If the search returns empty, it exits early to prevent LLM errors. If items are found, the top item is saved to `session["selected_item"]` and passed to the subsequent generation tools.
 
----
+## 🛠️ Tool Inventory
 
-### Tool 2: suggest_outfit
+* **`search_listings(description: str, size: str | None, max_price: float | None) -> list[dict]`**
+  Searches the local dataset using price/size filters and returns matching items based on keyword overlap.
+* **`suggest_outfit(new_item: dict, wardrobe: dict) -> str`**
+  Uses the Groq API to recommend specific outfit pairings based on the user's existing closet.
+* **`create_fit_card(outfit: str, new_item: dict) -> str`**
+  Takes the generated outfit and writes a short, engaging social media caption.
 
-**What it does:**
-<!-- Describe what this tool does in 1–2 sentences -->
+## 🛡️ Error Handling & Graceful Degradation
 
-**Input parameters:**
-<!-- List each parameter, its type, and what it represents -->
-- `new_item` (dict): ...
-- `wardrobe` (dict): ...
+I deliberately built failure modes to ensure the agent degrades gracefully:
+* **`search_listings`:** Querying an impossible item (e.g., a $5 designer ballgown) returns `[]`. The loop catches this and displays a friendly error instead of crashing.
+* **`suggest_outfit`:** If you select the "Empty Wardrobe" path, it dynamically adapts the prompt to give general styling advice instead of breaking.
+* **`create_fit_card`:** If passed an empty outfit string, it bypasses the API completely and returns a hardcoded error: *"Could not generate fit card: outfit details missing."*
 
-**What it returns:**
-<!-- Describe the return value -->
+## 📝 Spec Reflection
 
-**What happens if it fails or returns nothing:**
-<!-- What should the agent do if the wardrobe is empty or no outfit can be suggested? -->
+The final implementation tightly aligns with my `planning.md` file. The core logic of the planning loop—specifically the conditional branching after the search tool—works exactly as diagrammed. State passes cleanly between the tools without any hardcoded leaks.
 
----
+## 🤖 AI Usage
 
-### Tool 3: create_fit_card
-
-**What it does:**
-<!-- Describe what this tool does in 1–2 sentences -->
-
-**Input parameters:**
-<!-- List each parameter, its type, and what it represents -->
-- `outfit` (...): ...
-
-**What it returns:**
-<!-- Describe the return value -->
-
-**What happens if it fails or returns nothing:**
-<!-- What should the agent do if the outfit data is incomplete? -->
-
----
-
-### Additional Tools (if any)
-
-<!-- Copy the block above for any tools beyond the required three -->
-
----
-
-## Planning Loop
-
-**How does your agent decide which tool to call next?**
-<!-- Describe the logic your planning loop uses. What does it look at? What conditions change its behavior? How does it know when it's done? -->
-
----
-
-## State Management
-
-**How does information from one tool get passed to the next?**
-<!-- Describe how your agent stores and accesses state within a session. What data is tracked? How is it passed between tool calls? -->
-
----
-
-## Error Handling
-
-For each tool, describe the specific failure mode you're handling and what the agent does in response.
-
-| Tool | Failure mode | Agent response |
-|------|-------------|----------------|
-| search_listings | No results match the query | |
-| suggest_outfit | Wardrobe is empty | |
-| create_fit_card | Outfit input is missing or incomplete | |
-
----
-
-## Architecture
-
-<!-- Draw a diagram of your agent showing how the components connect:
-     User input → Planning Loop → Tools (search_listings, suggest_outfit, create_fit_card)
-                                                                          ↕
-                                                                   State / Session
-     Show what triggers each tool, how state flows between them, and where error paths branch off.
-     ASCII art, a Mermaid diagram (https://mermaid.js.org/syntax/flowchart.html), or an embedded
-     sketch are all fine. You'll share this diagram with an AI tool when asking it to implement
-     the planning loop and each individual tool. -->
-
----
-
-## AI Tool Plan
-
-<!-- For each part of the implementation below, describe:
-     - Which AI tool you plan to use (Claude, Copilot, ChatGPT, etc.)
-     - What you'll give it as input (which sections of this planning.md, your agent diagram)
-     - What you expect it to produce
-     - How you'll verify the output matches your spec before moving on
-
-     "I'll use AI to help me code" is not a plan.
-     "I'll give Claude my Tool 1 spec (inputs, return value, failure mode) and ask it to implement
-     search_listings() using load_listings() from the data loader — then test it against 3 queries
-     before trusting it" is a plan. -->
-
-**Milestone 3 — Individual tool implementations:**
-
-**Milestone 4 — Planning loop and state management:**
-
----
-
-## A Complete Interaction (Step by Step)
-
-Write out what a full user interaction looks like from start to finish — tool call by tool call. Use a specific example query.
-
-**Example user query:** "I'm looking for a vintage graphic tee under $30. I mostly wear baggy jeans and chunky sneakers. What's out there and how would I style it?"
-
-**Step 1:**
-<!-- What does the agent do first? Which tool is called? With what input? -->
-
-**Step 2:**
-<!-- What happens next? What was returned from step 1? What tool is called now? -->
-
-**Step 3:**
-<!-- Continue until the full interaction is complete -->
-
-**Final output to user:**
-<!-- What does the user actually see at the end? -->
+I used AI to help speed up boilerplate code, but heavily modified the outputs to fit my architecture:
+1. **API Implementation:** I gave the AI my `suggest_outfit` spec and the wardrobe JSON format. It generated the API call, but I had to override the model choice, changing it to `llama-3.3-70b-versatile` because the AI's suggested model was deprecated.
+2. **Planning Loop:** I provided my planning logic for the `run_agent` function. The AI generated a basic pass-through loop, but I manually modified it by adding a custom `re.search()` regex parser at the top to cleanly extract sizes and prices from the natural language query.
