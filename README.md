@@ -40,7 +40,8 @@ flowchart TD
     
     I --> J["Return completed session"]
     D --> J
-    
+```
+
 ## 🧠 State Management
 
 State is tracked entirely within a single `session` dictionary that is initialized at the start of the interaction. 
