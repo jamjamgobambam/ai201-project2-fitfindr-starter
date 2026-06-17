@@ -1,61 +1,74 @@
-# FitFindr — Starter Kit
+# FitFindr 🛍️
 
-This starter kit contains everything you need to begin Project 2.
+**Author:** Elaheh Baharlouei
 
-## What's Included
+FitFindr is a multi-tool AI agent designed to help users find secondhand clothing and seamlessly style those pieces with their existing digital wardrobe. The agent orchestrates a custom planning loop, connecting a local search algorithm with Groq-powered LLMs to deliver personalized fashion advice and shareable social media captions through a Gradio interface.
 
-```
-ai201-project2-fitfindr-starter/
-├── data/
-│   ├── listings.json          # 40 mock secondhand listings
-│   └── wardrobe_schema.json   # Wardrobe format + example wardrobe
-├── utils/
-│   └── data_loader.py         # Helper functions for loading the data
-├── planning.md                # Your planning template — fill this out first
-└── requirements.txt           # Python dependencies
-```
+## 🚀 Setup & Installation
 
-## Setup
+1. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. **Environment Variables:**
+   Set your Groq API key in a `.env` file in the root directory:
+   ```env
+   GROQ_API_KEY=your_key_here
+   ```
+3. **Run the Application:**
+   ```bash
+   python app.py
+   ```
 
-```bash
-pip install -r requirements.txt
-```
+## 🏗️ Architecture
 
-Set your Groq API key in a `.env` file (get a free key at [console.groq.com](https://console.groq.com)):
-```
-GROQ_API_KEY=your_key_here
-```
+FitFindr operates using a conditional planning loop rather than a rigid, sequential chain. The diagram below illustrates how the agent branches its logic based on the success or failure of the initial search tool.
 
-## The Mock Listings Dataset
+```mermaid
+flowchart TD
+    A["User Query & Wardrobe"] --> B["Initialize Session & Parse Query"]
+    B --> C[search_listings]
+    
+    C -- "results = []" --> D["Set session['error'] & Return early"]
+    C -- "results = [item, ...]" --> E["Session: selected_item = results 0"]
+    
+    E --> F[suggest_outfit]
+    F --> G["Session: outfit_suggestion = output"]
+    
+    G --> H[create_fit_card]
+    H --> I["Session: fit_card = output"]
+    
+    I --> J["Return completed session"]
+    D --> J
+    
+## 🧠 State Management
 
-`data/listings.json` contains 40 mock secondhand listings across categories (tops, bottoms, outerwear, shoes, accessories) and styles (vintage, y2k, grunge, cottagecore, streetwear, and more).
+State is tracked entirely within a single `session` dictionary that is initialized at the start of the interaction. 
+1. **Parsing:** The agent extracts explicit constraints like maximum price and size.
+2. **Conditional Branching:** If the search returns empty, it exits early to prevent LLM errors. If items are found, the top item is saved to `session["selected_item"]` and passed to the subsequent generation tools.
 
-Each listing has: `id`, `title`, `description`, `category`, `style_tags`, `size`, `condition`, `price`, `colors`, `brand`, and `platform`.
+## 🛠️ Tool Inventory
 
-Load it with:
-```python
-from utils.data_loader import load_listings
-listings = load_listings()
-```
+* **`search_listings(description: str, size: str | None, max_price: float | None) -> list[dict]`**
+  Searches the local dataset using price/size filters and returns matching items based on keyword overlap.
+* **`suggest_outfit(new_item: dict, wardrobe: dict) -> str`**
+  Uses the Groq API to recommend specific outfit pairings based on the user's existing closet.
+* **`create_fit_card(outfit: str, new_item: dict) -> str`**
+  Takes the generated outfit and writes a short, engaging social media caption.
 
-## The Wardrobe Schema
+## 🛡️ Error Handling & Graceful Degradation
 
-`data/wardrobe_schema.json` defines the format your agent uses to represent a user's existing wardrobe. It includes:
+I deliberately built failure modes to ensure the agent degrades gracefully:
+* **`search_listings`:** Querying an impossible item (e.g., a $5 designer ballgown) returns `[]`. The loop catches this and displays a friendly error instead of crashing.
+* **`suggest_outfit`:** If you select the "Empty Wardrobe" path, it dynamically adapts the prompt to give general styling advice instead of breaking.
+* **`create_fit_card`:** If passed an empty outfit string, it bypasses the API completely and returns a hardcoded error: *"Could not generate fit card: outfit details missing."*
 
-- `schema`: field definitions for a wardrobe item
-- `example_wardrobe`: a sample wardrobe with 10 items you can use for testing
-- `empty_wardrobe`: a starting template for a new user
+## 📝 Spec Reflection
 
-Load an example wardrobe with:
-```python
-from utils.data_loader import get_example_wardrobe
-wardrobe = get_example_wardrobe()
-```
+The final implementation tightly aligns with my `planning.md` file. The core logic of the planning loop—specifically the conditional branching after the search tool—works exactly as diagrammed. State passes cleanly between the tools without any hardcoded leaks.
 
-## Where to Start
+## 🤖 AI Usage
 
-1. **Read `planning.md` and fill it out before writing any code.**
-2. Verify the data loads correctly by running `python utils/data_loader.py`.
-3. Build and test each tool individually before connecting them through your planning loop.
-
-Your implementation files go in this same directory. There's no required file structure for your agent code — organize it however makes sense for your design.
+I used AI to help speed up boilerplate code, but heavily modified the outputs to fit my architecture:
+1. **API Implementation:** I gave the AI my `suggest_outfit` spec and the wardrobe JSON format. It generated the API call, but I had to override the model choice, changing it to `llama-3.3-70b-versatile` because the AI's suggested model was deprecated.
+2. **Planning Loop:** I provided my planning logic for the `run_agent` function. The AI generated a basic pass-through loop, but I manually modified it by adding a custom `re.search()` regex parser at the top to cleanly extract sizes and prices from the natural language query.

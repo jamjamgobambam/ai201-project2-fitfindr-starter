@@ -26,19 +26,19 @@ FitFindr operates using a conditional planning loop rather than a rigid, sequent
 
 ```mermaid
 flowchart TD
-    A[User Query & Wardrobe] --> B[Initialize Session & Parse Query]
+    A["User Query & Wardrobe"] --> B["Initialize Session & Parse Query"]
     B --> C[search_listings]
     
-    C -- "results = []" --> D[Set session['error'] & Return early]
-    C -- "results = [item, ...]" --> E[Session: selected_item = results 0]
+    C -- "results = []" --> D["Set session['error'] & Return early"]
+    C -- "results = [item, ...]" --> E["Session: selected_item = results 0"]
     
     E --> F[suggest_outfit]
-    F --> G[Session: outfit_suggestion = output]
+    F --> G["Session: outfit_suggestion = output"]
     
     G --> H[create_fit_card]
-    H --> I[Session: fit_card = output]
+    H --> I["Session: fit_card = output"]
     
-    I --> J[Return completed session]
+    I --> J["Return completed session"]
     D --> J
 ```
 
